@@ -6,6 +6,18 @@ A batch AI agent that completes a fixed set of tasks using the **fewest Firework
 tokens possible** — answering everything it safely can on a free local model and
 escalating to Fireworks AI only when a local answer can't be trusted.
 
+## 🐳 Submission image (public, `linux/amd64`)
+
+```
+ghcr.io/yashasvithakur/tokenoptimizer-agent:latest
+```
+```bash
+docker pull ghcr.io/yashasvithakur/tokenoptimizer-agent:latest
+```
+Built and pushed automatically by [`.github/workflows/build.yml`](.github/workflows/build.yml);
+linked to this repo under **Packages**. Reads `/input/tasks.json` → writes
+`/output/results.json`.
+
 ## How Track 1 is actually scored (and how we win it)
 
 The judging harness runs your container headless: it mounts `/input/tasks.json`,

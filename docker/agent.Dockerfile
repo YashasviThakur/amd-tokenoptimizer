@@ -9,6 +9,12 @@
 # and mounts /input + /output. We only read those from the environment.
 FROM python:3.11-slim
 
+# Links this GHCR image to the GitHub repo (shows under the repo's Packages) so
+# the judging harness can discover it from the repository URL.
+LABEL org.opencontainers.image.source="https://github.com/YashasviThakur/amd-tokenoptimizer" \
+      org.opencontainers.image.description="AMD ACT II Track 1 - Hybrid Token-Efficient Routing Agent" \
+      org.opencontainers.image.licenses="MIT"
+
 # curl + ca-certificates kept (entrypoint health check uses curl); zstd is
 # required by the ollama installer to extract its archive.
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates zstd \
