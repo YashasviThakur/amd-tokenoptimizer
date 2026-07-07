@@ -36,9 +36,12 @@ class Model:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.meter = meter  # set on the remote model only
-        # one reused connection pool for the whole batch
+        # one reused connection pool for the whole batch. Granular timeout: keep
+        # a generous read timeout (batched generations legitimately take a while)
+        # but fail FAST on connect/pool so a dead/blackholed network can't burn
+        # the whole per-task/total time budget on a hung TCP connect.
         self._client = httpx.Client(
-            timeout=timeout,
+            timeout=httpx.Timeout(timeout, connect=5.0, pool=5.0),
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         )
 
@@ -57,8 +60,11 @@ class Model:
         for attempt in range(2):
             try:
                 r = self._client.post(url, json=payload)
-                if r.status_code == 400 and "reasoning" in r.text.lower() and "reasoning_effort" in payload:
-                    payload.pop("reasoning_effort")  # this model doesn't accept it
+                if r.status_code == 400 and "reasoning_effort" in payload:
+                    # ANY 400 while this param is present: retry without it. A model
+                    # that rejects reasoning_effort with a differently-worded error
+                    # must not fall through to an empty answer (gate risk).
+                    payload.pop("reasoning_effort")
                     r = self._client.post(url, json=payload)
                 if r.status_code >= 500:
                     raise httpx.HTTPStatusError("server error", request=r.request, response=r)

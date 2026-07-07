@@ -167,10 +167,16 @@ def solve_math_word(prompt: str) -> str | None:
     p = prompt.lower().replace(",", "")
 
     if any(k in p for k in ("discount", "reduced by", "% off")):
-        price = re.search(r"\$?\s*(\d+(?:\.\d+)?)", p)
         disc = re.search(r"(\d+(?:\.\d+)?)\s*%", p)
-        # single, unambiguous discount only (one percentage in the text)
-        if price and disc and len(re.findall(r"\d+(?:\.\d+)?\s*%", p)) == 1:
+        # price must be anchored to a currency/price signal — NOT just "the first
+        # number", which is the discount % in phrasings that state it first.
+        price = (re.search(r"\$\s*(\d+(?:\.\d+)?)", p)
+                 or re.search(r"(\d+(?:\.\d+)?)\s*dollars", p)
+                 or re.search(r"(?:costs?|priced at|price(?:d| is| was)?|originally|was)\s+\$?\s*(\d+(?:\.\d+)?)", p))
+        # single unambiguous discount, and the price is not the discount number
+        if (price and disc
+                and len(re.findall(r"\d+(?:\.\d+)?\s*%", p)) == 1
+                and price.group(1) != disc.group(1)):
             return _fmt(float(price.group(1)) * (1 - float(disc.group(1)) / 100.0))
 
     if "speed" in p:
@@ -187,43 +193,45 @@ def solve_math_extra(prompt: str) -> str | None:
     gcd/lcm. Every branch requires an exact keyword and the exact operand count,
     otherwise defers — so it never guesses on a multi-number problem."""
     p = prompt.lower().replace(",", "")
+    # Operand-count gate: a lone operation must contain EXACTLY the numbers it
+    # consumes. This is what stops a compound problem ("2 to the power of 3 plus
+    # 1", "5 squared plus 1", "square root of 16 plus 9") from being silently
+    # answered by the first operand only — any extra number forces a defer.
+    nums = re.findall(r"-?\d+(?:\.\d+)?", p)
 
-    # factorial: "5 factorial", "factorial of 5", "5!" (exactly one number)
-    if "factorial" in p or re.search(r"\b\d+\s*!", p):
-        nums = re.findall(r"\d+", p)
-        if len(nums) == 1 and int(nums[0]) <= 20:
-            return str(math.factorial(int(nums[0])))  # exact int, no float rounding
+    # factorial: "5 factorial", "factorial of 5", "5!" (exactly one integer)
+    if ("factorial" in p or re.search(r"\b\d+\s*!", p)) and len(nums) == 1:
+        v = float(nums[0])
+        if v.is_integer() and 0 <= v <= 20:
+            return str(math.factorial(int(v)))  # exact int, no float rounding
 
-    # N to the power of M / N raised to (the power of) M
+    # N to the power of M / N raised to (the power of) M (exactly two numbers)
     m = re.search(r"(\d+(?:\.\d+)?)\s+(?:to the power(?: of)?|raised to(?: the power(?: of)?)?)\s+"
                   r"(-?\d+(?:\.\d+)?)", p)
-    if m:
+    if m and len(nums) == 2:
         return _fmt(float(m.group(1)) ** float(m.group(2)))
 
-    # "5 squared" / "the square of 5" (guard against "square root of")
-    m = re.search(r"\b(\d+(?:\.\d+)?)\s+squared\b", p) or re.search(r"\bsquare of\s+(\d+(?:\.\d+)?)", p)
-    if m:
-        return _fmt(float(m.group(1)) ** 2)
-    m = re.search(r"\b(\d+(?:\.\d+)?)\s+cubed\b", p) or re.search(r"\bcube of\s+(\d+(?:\.\d+)?)", p)
-    if m:
-        return _fmt(float(m.group(1)) ** 3)
-
-    m = re.search(r"square root of\s+(\d+(?:\.\d+)?)", p)
-    if m:
-        return _fmt(math.sqrt(float(m.group(1))))
-    m = re.search(r"cube root of\s+(\d+(?:\.\d+)?)", p)
-    if m:
-        return _fmt(round(float(m.group(1)) ** (1.0 / 3.0), 6))
+    # single-operand ops: squared / cubed / square root / cube root
+    if len(nums) == 1:
+        m = re.search(r"\b(\d+(?:\.\d+)?)\s+squared\b", p) or re.search(r"\bsquare of\s+(\d+(?:\.\d+)?)", p)
+        if m:
+            return _fmt(float(m.group(1)) ** 2)
+        m = re.search(r"\b(\d+(?:\.\d+)?)\s+cubed\b", p) or re.search(r"\bcube of\s+(\d+(?:\.\d+)?)", p)
+        if m:
+            return _fmt(float(m.group(1)) ** 3)
+        m = re.search(r"square root of\s+(\d+(?:\.\d+)?)", p)
+        if m:
+            return _fmt(math.sqrt(float(m.group(1))))
+        m = re.search(r"cube root of\s+(\d+(?:\.\d+)?)", p)
+        if m:
+            return _fmt(round(float(m.group(1)) ** (1.0 / 3.0), 6))
 
     # gcd / lcm of exactly two integers
-    if re.search(r"\b(?:gcd|greatest common (?:divisor|factor))\b", p):
-        nums = re.findall(r"\d+", p)
-        if len(nums) == 2:
-            return str(math.gcd(int(nums[0]), int(nums[1])))
-    if re.search(r"\b(?:lcm|least common multiple)\b", p):
-        nums = re.findall(r"\d+", p)
-        if len(nums) == 2 and int(nums[0]) and int(nums[1]):
-            a, b = int(nums[0]), int(nums[1])
+    if len(nums) == 2 and re.search(r"\b(?:gcd|greatest common (?:divisor|factor))\b", p):
+        return str(math.gcd(int(float(nums[0])), int(float(nums[1]))))
+    if len(nums) == 2 and re.search(r"\b(?:lcm|least common multiple)\b", p):
+        a, b = int(float(nums[0])), int(float(nums[1]))
+        if a and b:
             return str(a * b // math.gcd(a, b))
 
     return None

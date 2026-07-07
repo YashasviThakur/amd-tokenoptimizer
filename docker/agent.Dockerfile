@@ -20,6 +20,12 @@ LABEL org.opencontainers.image.source="https://github.com/YashasviThakur/amd-tok
 WORKDIR /app
 COPY agent/requirements.txt ./agent/requirements.txt
 RUN pip install --no-cache-dir -r agent/requirements.txt
+
+# Pre-bake the tiktoken vocab so the diagnostic token counter never hits the
+# network at container start (a hung download could eat the readiness window).
+ENV TIKTOKEN_CACHE_DIR=/app/.tiktoken
+RUN python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
+
 COPY agent ./agent
 
 ENV INPUT_PATH=/input/tasks.json \

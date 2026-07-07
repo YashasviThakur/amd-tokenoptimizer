@@ -18,8 +18,12 @@ from .config import config
 from .prompts import build_batch_messages, build_messages, build_remote_messages, max_tokens_for
 from .solvers import free_solve
 
-# short-answer categories safe to batch into one Fireworks call
-BATCHABLE = {"sentiment", "factual", "math", "logic"}
+# Categories safe to batch into one Fireworks call: short, INDEPENDENT lookups
+# where a wrong batched line is no likelier than a wrong individual answer.
+# math/logic are deliberately excluded — the ones that reach Fireworks are the
+# HARD residue the free solvers declined, and the parse-failure fallback only
+# catches format errors, not wrong-but-well-formed answers.
+BATCHABLE = {"sentiment", "factual"}
 
 _BATCH_LINE = re.compile(r"(?m)^\s*(\d+)\s*[\).:\-]\s*(.+?)\s*$")
 

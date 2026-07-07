@@ -44,7 +44,13 @@ def try_arithmetic(prompt: str) -> str | None:
 
     m = re.search(r"(\d+(?:\.\d+)?)\s*(?:percent|%)\s*of\s*(\d+(?:\.\d+)?)", p)
     if m:
-        return _fmt(float(m.group(1)) / 100.0 * float(m.group(2)))
+        # only trust "X% of Y" when it IS the whole computation: exactly two
+        # numbers and no trailing operator (else "20% of 50 plus 5" would wrongly
+        # return 10). A compound percent expression defers to the model.
+        two_nums = len(re.findall(r"\d+(?:\.\d+)?", p)) == 2
+        if two_nums and not re.search(r"[\+\-\*/]\s*\d", p[m.end():]):
+            return _fmt(float(m.group(1)) / 100.0 * float(m.group(2)))
+        return None  # compound percent expression -> escalate, don't crude-eval
 
     m = re.search(r"([0-9][0-9\.\s\+\-\*/\(\)]*[0-9\)])", p)
     if m and re.search(r"[\+\-\*/]", m.group(1)):

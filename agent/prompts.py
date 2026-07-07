@@ -17,9 +17,9 @@ POLICY = {
     "summarization": ("Summarize as instructed, honoring any length constraint. Output only the summary.", 256),
     "ner":           ('Extract named entities. Output ONLY minified JSON with keys '
                       '"person","org","location","date" (each a list of strings).', 256),
-    "code_debug":    ("Fix the bug. Output only the corrected code, no explanation.", 512),
+    "code_debug":    ("Fix the bug. Output only the corrected code, no explanation.", 1024),
     "logic":         ("Solve the puzzle. Reason internally, then output only the final answer.", 128),
-    "code_gen":      ("Write the function to spec. Output only the code, no explanation.", 512),
+    "code_gen":      ("Write the function to spec. Output only the code, no explanation.", 1024),
 }
 DEFAULT = ("Answer correctly and concisely. Output only the answer.", 128)
 
@@ -85,8 +85,7 @@ def build_batch_messages(category: str, prompts: list[str]) -> list[dict]:
     one 'N) <answer>' line per item.
     """
     sys = REMOTE_SYSTEM.get(category, "Answer only.") + (
-        " You are given several numbered items. Answer EACH item. Output exactly "
-        "one line per item in the form 'N) <answer>' — nothing else, no blank lines.")
+        " Answer each numbered item on its own line as 'N) answer'.")
     body = "\n".join(f"{i + 1}) {_compress(p)}" for i, p in enumerate(prompts))
     return [{"role": "system", "content": sys}, {"role": "user", "content": body}]
 

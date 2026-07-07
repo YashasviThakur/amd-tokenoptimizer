@@ -69,9 +69,13 @@ def _answer_str(value) -> str:
 
 
 def _write_json(path: str, obj) -> None:
+    """Atomic write: a crash mid-write can never leave a half-written (invalid)
+    results.json — we write to a temp file and os.replace() it into place."""
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, default=str)
+    os.replace(tmp, path)
 
 
 def run() -> dict:
@@ -106,7 +110,15 @@ def run() -> dict:
 
     # pass 2: Fireworks — batch short-answer, SINGLE-LINE tasks (unambiguous
     # boundaries); everything else stays individual.
+    # Soft global deadline: the judging container is killed at ~10min (→ ZERO for
+    # every task). If a degraded/hung network pushes us near that, stop issuing
+    # calls and let assembly emit the remaining tasks with empty answers — a
+    # partial result that still writes valid JSON beats a kill that writes none.
+    deadline_s = float(os.getenv("RUN_DEADLINE_S", "555"))
     for category, ctasks in pending.items():
+        if time.time() - t0 > deadline_s:
+            print(f"[agent] deadline {deadline_s}s hit; emitting remaining as empty", file=sys.stderr)
+            break
         can_batch = (not config.force_remote) and config.batch_size > 1 and category in BATCHABLE
         singles = [t for t in ctasks if can_batch and "\n" not in (t.get("prompt") or "")]
         rest = [t for t in ctasks if t not in singles]
@@ -131,7 +143,10 @@ def run() -> dict:
         meta.append({"task_id": r.get("task_id"), "route": r.get("route"),
                      "category": r.get("category"), "tokens": r.get("tokens") or 0})
 
-    _write_json(config.output_path, results)
+    try:
+        _write_json(config.output_path, results)
+    except Exception as e:  # last resort — never crash on the primary write
+        print(f"[agent] primary write failed: {e}", file=sys.stderr)
     try:  # diagnostics sidecar for the eval harness (ignored by the judging harness)
         _write_json(config.output_path + ".meta.json", meta)
     except Exception:
@@ -156,6 +171,12 @@ def selftest() -> int:
         {"task_id": "st1", "prompt": "What is 12 * 12?"},
         {"task_id": "st2", "prompt": "Alice is taller than Bob. Bob is taller than Carol. Who is the shortest?"},
         {"task_id": "st3", "prompt": "If all A are B and all B are C, are all A C? Answer yes or no."},
+        # discount solver must anchor the price (not grab the first number = 20%)
+        {"task_id": "st4", "prompt": "A shirt is discounted by 20%. The original price is $50. Sale price in dollars?"},
+        # compound expressions must DEFER (offline => empty answer); a wrong-number
+        # regression in the operand-count / percent guards would fail these.
+        {"task_id": "st5", "prompt": "What is 2 to the power of 3 plus 1?"},
+        {"task_id": "st6", "prompt": "What is 20% of 50 plus 5?"},
     ]
     d = tempfile.mkdtemp()
     inp, outp = os.path.join(d, "tasks.json"), os.path.join(d, "results.json")
@@ -167,11 +188,15 @@ def selftest() -> int:
 
     try:
         out = json.loads(open(outp, encoding="utf-8").read())
-        ok = (isinstance(out, list) and len(out) == 3
+        by = {o["task_id"]: o["answer"] for o in out}
+        ok = (isinstance(out, list) and len(out) == 6
               and all(isinstance(o.get("task_id"), str) and isinstance(o.get("answer"), str) for o in out)
-              and "144" in out[0]["answer"]
-              and "carol" in out[1]["answer"].lower()
-              and "yes" in out[2]["answer"].lower())
+              and "144" in by["st1"]
+              and "carol" in by["st2"].lower()
+              and "yes" in by["st3"].lower()
+              and "40" in by["st4"]                       # discount anchored correctly
+              and by["st5"].strip() == ""                 # power+add: solver deferred
+              and by["st6"].strip() == "")                # percent+add: solver deferred
     except Exception as e:
         print(f"[selftest] FAIL: {e}")
         return 1
@@ -182,5 +207,13 @@ def selftest() -> int:
 if __name__ == "__main__":
     if "--selftest" in sys.argv:
         sys.exit(selftest())
-    run()
+    try:
+        run()
+    except Exception as e:  # a non-zero exit or missing results.json = ZERO score
+        print(f"[agent] FATAL: {e}", file=sys.stderr)
+        try:  # guarantee *some* valid results.json exists if run() died early
+            if not os.path.exists(config.output_path):
+                _write_json(config.output_path, [])
+        except Exception:
+            pass
     sys.exit(0)
