@@ -11,10 +11,29 @@ Per task:
 """
 from __future__ import annotations
 
+import re
+
 from .classifier import classify
 from .config import config
-from .prompts import build_messages, build_remote_messages, max_tokens_for
+from .prompts import build_batch_messages, build_messages, build_remote_messages, max_tokens_for
 from .solvers import free_solve
+
+# short-answer categories safe to batch into one Fireworks call
+BATCHABLE = {"sentiment", "factual", "math", "logic"}
+
+_BATCH_LINE = re.compile(r"(?m)^\s*(\d+)\s*[\).:\-]\s*(.+?)\s*$")
+
+
+def parse_batch(text: str, n: int) -> list[str] | None:
+    """Extract exactly n 'N) <answer>' lines, in order; None if it doesn't line up."""
+    found: dict[int, str] = {}
+    for m in _BATCH_LINE.finditer(text or ""):
+        i = int(m.group(1))
+        if 1 <= i <= n and i not in found:
+            found[i] = m.group(2).strip()
+    if len(found) == n:
+        return [found[i] for i in range(1, n + 1)]
+    return None
 
 
 def _pick_remote_model(category: str) -> str:
@@ -54,6 +73,36 @@ def _fireworks(task_id, category, prompt, remote, *, full_prompt=False):
     except Exception as e:
         return {"task_id": task_id, "answer": "", "route": "error",
                 "category": category, "tokens": remote.meter.total - before, "error": str(e)}
+
+
+def fireworks_batch(category: str, tasks: list[dict], remote) -> list[dict]:
+    """One Fireworks call for a group of same-category short-answer tasks.
+
+    Falls back to individual calls if the batched response can't be parsed into
+    exactly one answer per task — so accuracy is never sacrificed (only tokens).
+    """
+    if len(tasks) == 1:
+        t = tasks[0]
+        return [_fireworks(t.get("task_id"), category, t.get("prompt", ""), remote)]
+
+    model = _pick_remote_model(category)
+    prompts = [t.get("prompt", "") for t in tasks]
+    before = remote.meter.total
+    try:
+        out = remote.chat(model, build_batch_messages(category, prompts),
+                          max_tokens=max_tokens_for(category) * len(tasks) + 40,
+                          temperature=0.0, n=1, reasoning_effort=config.reasoning_effort)
+        answers = parse_batch(out[0], len(tasks))
+    except Exception:
+        answers = None
+    spent = remote.meter.total - before
+
+    if answers is None:  # parse/format failure -> individual calls (accuracy-safe)
+        return [_fireworks(t.get("task_id"), category, t.get("prompt", ""), remote) for t in tasks]
+
+    return [{"task_id": t.get("task_id"), "answer": a.strip(), "route": "remote-batch",
+             "category": category, "tokens": (spent if i == 0 else 0), "model": model}
+            for i, (t, a) in enumerate(zip(tasks, answers))]
 
 
 def route(task: dict, remote) -> dict:

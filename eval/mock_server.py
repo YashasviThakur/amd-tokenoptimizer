@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import re
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -63,14 +64,26 @@ async def chat(request: Request):
     is_local = (model == LOCAL_MODEL_NAME)
 
     user = _last_user(messages)
-    task_id = PROMPT_TO_ID.get(user)
 
-    contents = []
-    if task_id is None:
-        contents = ["I don't know." for _ in range(n)]
+    # batched request? lines like "N) <prompt>" -> reply "N) <answer>"
+    items = re.findall(r"(?m)^\s*(\d+)\)\s*(.+?)\s*$", user)
+    if len(items) >= 2:
+        out = []
+        for num, ptext in items:
+            tid = PROMPT_TO_ID.get(ptext.strip())
+            if tid is None:
+                out.append(f"{num}) unknown")
+            else:
+                ans = _simulate(tid, EXPECTED[tid], is_local, model, 0).splitlines()[0]
+                out.append(f"{num}) {ans}")
+        contents = ["\n".join(out)]
     else:
-        exp = EXPECTED[task_id]
-        contents = [_simulate(task_id, exp, is_local, model, i) for i in range(n)]
+        task_id = PROMPT_TO_ID.get(user)
+        if task_id is None:
+            contents = ["I don't know." for _ in range(n)]
+        else:
+            exp = EXPECTED[task_id]
+            contents = [_simulate(task_id, exp, is_local, model, i) for i in range(n)]
 
     prompt_tokens = count_messages(messages)
     completion_tokens = sum(count_tokens(c) for c in contents)

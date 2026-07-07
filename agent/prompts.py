@@ -76,6 +76,21 @@ def build_remote_messages(category: str, prompt: str) -> list[dict]:
     ]
 
 
+def build_batch_messages(category: str, prompts: list[str]) -> list[dict]:
+    """Pack several same-category short-answer tasks into ONE Fireworks call.
+
+    Amortizes the fixed per-call overhead (system prompt + reasoning-model
+    scaffold) across many tasks — the biggest token lever now that most tasks
+    hit Fireworks. Only used for short-answer categories; the model must return
+    one 'N) <answer>' line per item.
+    """
+    sys = REMOTE_SYSTEM.get(category, "Answer only.") + (
+        " You are given several numbered items. Answer EACH item. Output exactly "
+        "one line per item in the form 'N) <answer>' — nothing else, no blank lines.")
+    body = "\n".join(f"{i + 1}) {_compress(p)}" for i, p in enumerate(prompts))
+    return [{"role": "system", "content": sys}, {"role": "user", "content": body}]
+
+
 def build_retry_messages(category: str, prompt: str) -> list[dict]:
     """A stricter local re-attempt: emphasize exact output format so a malformed
     first answer becomes verifiable — recovering the task locally for 0 tokens."""

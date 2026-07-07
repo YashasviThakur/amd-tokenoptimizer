@@ -11,9 +11,13 @@ import os
 import sys
 import time
 
+from collections import defaultdict
+
 from .backends import Model, RemoteMeter
+from .classifier import classify
 from .config import config
-from .router import route
+from .router import BATCHABLE, fireworks_batch, route
+from .solvers import free_solve
 
 _PROMPT_KEYS = ("prompt", "question", "input", "text", "query", "task")
 
@@ -83,18 +87,49 @@ def run() -> dict:
         _write_json(config.output_path, [])  # valid JSON, still exit 0
         return {"tasks": 0, "error": str(e)}
 
-    results, meta, routes = [], [], {}
+    # pass 1: classify + free deterministic solvers (0 tokens); queue the rest
+    result_by_id, order, pending = {}, [], defaultdict(list)
     for task in tasks:
+        tid = task.get("task_id")
+        order.append(tid)
+        prompt = task.get("prompt", "")
         try:
-            r = route(task, remote)
-        except Exception as e:  # never let one task sink the batch
-            r = {"task_id": task.get("task_id"), "answer": "", "route": "error",
-                 "category": "?", "error": str(e)}
+            category = classify(prompt)
+            solved = None if config.force_remote else free_solve(category, prompt)
+        except Exception:
+            category, solved = "?", None
+        if solved is not None:
+            result_by_id[tid] = {"task_id": tid, "answer": solved, "route": "code",
+                                 "category": category, "tokens": 0}
+        else:
+            pending[category].append(task)
+
+    # pass 2: Fireworks — batch short-answer, SINGLE-LINE tasks (unambiguous
+    # boundaries); everything else stays individual.
+    for category, ctasks in pending.items():
+        can_batch = (not config.force_remote) and config.batch_size > 1 and category in BATCHABLE
+        singles = [t for t in ctasks if can_batch and "\n" not in (t.get("prompt") or "")]
+        rest = [t for t in ctasks if t not in singles]
+        try:
+            for i in range(0, len(singles), config.batch_size):
+                for r in fireworks_batch(category, singles[i:i + config.batch_size], remote):
+                    result_by_id[r["task_id"]] = r
+            for t in rest:
+                result_by_id[t.get("task_id")] = route(t, remote)
+        except Exception as e:  # never let one group sink the batch
+            for t in ctasks:
+                result_by_id.setdefault(t.get("task_id"), {
+                    "task_id": t.get("task_id"), "answer": "", "route": "error",
+                    "category": category, "error": str(e)})
+
+    # assemble results in the original task order
+    results, meta, routes = [], [], {}
+    for tid in order:
+        r = result_by_id.get(tid, {"task_id": tid, "answer": "", "route": "missing", "category": "?"})
         routes[r.get("route", "?")] = routes.get(r.get("route", "?"), 0) + 1
         results.append({"task_id": r.get("task_id"), "answer": _answer_str(r.get("answer"))})
         meta.append({"task_id": r.get("task_id"), "route": r.get("route"),
-                     "category": r.get("category"), "confidence": r.get("confidence"),
-                     "tokens": r.get("tokens") or 0})
+                     "category": r.get("category"), "tokens": r.get("tokens") or 0})
 
     _write_json(config.output_path, results)
     try:  # diagnostics sidecar for the eval harness (ignored by the judging harness)

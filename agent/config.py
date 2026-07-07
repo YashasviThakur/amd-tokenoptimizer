@@ -45,6 +45,9 @@ class Config:
     # a valid-but-wrong answer (accuracy/gate risk). Enable + A/B only with data.
     local_retry: bool = os.getenv("LOCAL_RETRY", "0").strip().lower() in ("1", "true", "yes")
     request_timeout: float = float(os.getenv("REQUEST_TIMEOUT", "28"))
+    # pack up to N same-category short-answer tasks per Fireworks call (amortizes
+    # per-call overhead). 1 disables batching.
+    batch_size: int = int(os.getenv("BATCH_SIZE", "6"))
     # Baseline switch used by the eval harness: force every task to Fireworks.
     force_remote: bool = os.getenv("FORCE_REMOTE", "0").strip().lower() in ("1", "true", "yes")
 
