@@ -54,19 +54,26 @@ def _confidence(category: str, prompt: str, samples: list[str]) -> float:
 
 
 def _pick_remote_model(category: str) -> str:
-    """Choose a Fireworks model from ALLOWED_MODELS.
+    """Choose a model from the harness-injected ALLOWED_MODELS.
 
-    Token score is by count (not price) and — as live testing showed — a model's
-    reasoning verbosity, not its size, drives token cost. So we don't guess by
-    name: use the configured preferred model when the harness allows it (we set
-    it to a measured-frugal one), else the first allowed model.
+    Token score is by count (not price), and live testing showed reasoning models
+    are far more verbose. So we prefer a compact non-reasoning instruct model
+    (Gemma) for most tasks and a code-specialized model for code — matched by
+    substring so it works whatever exact IDs the harness injects. A configured
+    preferred model wins if allowed; otherwise fall back to the first allowed.
     """
     models = config.allowed_models
     if not models:
         return ""
     if config.preferred_model and config.preferred_model in models:
         return config.preferred_model
-    return models[0]
+
+    def find(sub: str):
+        return next((m for m in models if sub in m.lower()), None)
+
+    if category in ("code_gen", "code_debug"):
+        return find("code") or find("gemma") or models[0]
+    return find("gemma") or models[0]
 
 
 def route(task: dict, local, remote) -> dict:

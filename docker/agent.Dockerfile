@@ -9,8 +9,9 @@
 # and mounts /input + /output. We only read those from the environment.
 FROM python:3.11-slim
 
-# curl + ca-certificates are kept — the entrypoint's health check uses curl.
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+# curl + ca-certificates kept (entrypoint health check uses curl); zstd is
+# required by the ollama installer to extract its archive.
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates zstd \
     && curl -fsSL https://ollama.com/install.sh | sh \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -37,6 +38,8 @@ ENV LOCAL_BASE_URL=http://localhost:11434/v1 \
     LOCAL_API_KEY=ollama \
     INPUT_PATH=/input/tasks.json \
     OUTPUT_PATH=/output/results.json \
-    ESCALATE_THRESHOLD=0.60
+    ESCALATE_THRESHOLD=0.60 \
+    REASONING_EFFORT=low \
+    REMOTE_MODEL=accounts/fireworks/models/gemma-4-31b-it
 
 ENTRYPOINT ["/entrypoint.sh"]
