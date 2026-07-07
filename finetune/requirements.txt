@@ -1,0 +1,8 @@
+# Fine-tuning deps — install on the AMD GPU pod (ROCm).
+# IMPORTANT: install the ROCm build of torch FIRST, e.g.:
+#   pip install --index-url https://download.pytorch.org/whl/rocm6.1 torch
+transformers>=4.44
+datasets>=2.20
+peft>=0.12
+trl>=0.9
+accelerate>=0.33

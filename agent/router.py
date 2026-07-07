@@ -14,8 +14,12 @@ import re
 from . import verifiers as V
 from .classifier import HARD, classify
 from .config import config
-from .prompts import build_messages, build_remote_messages, max_tokens_for
+from .prompts import build_messages, build_remote_messages, build_retry_messages, max_tokens_for
 from .solvers import free_solve
+
+# categories where a free verifier (compiles / valid JSON / label / length) can
+# turn a failed first attempt into a verifiable one — worth a free local retry.
+RETRY_CATEGORIES = {"code_debug", "code_gen", "ner", "summarization", "sentiment"}
 
 # Base trust per category (how often a small local model is right, roughly).
 PRIOR = {
@@ -115,6 +119,19 @@ def route(task: dict, local, remote) -> dict:
     if samples and conf >= config.escalate_threshold:
         return {"task_id": task_id, "answer": samples[0].strip(), "route": "local",
                 "category": category, "tokens": 0, "confidence": round(conf, 3)}
+
+    # 4b) free local verify-and-retry: one strict re-attempt before spending
+    # tokens; keep it only if it now passes verification (gate-safe).
+    if samples and config.local_retry and category in RETRY_CATEGORIES:
+        try:
+            retry = local.chat(config.local_model, build_retry_messages(category, prompt),
+                               max_tokens=max_tokens_for(category), temperature=0.0, n=1)
+            rconf = _confidence(category, prompt, retry)
+            if rconf >= config.escalate_threshold:
+                return {"task_id": task_id, "answer": retry[0].strip(), "route": "local-retry",
+                        "category": category, "tokens": 0, "confidence": round(rconf, 3)}
+        except Exception:
+            pass
 
     if config.has_remote():
         model = _pick_remote_model(category)

@@ -40,6 +40,10 @@ class Config:
     # Routing knobs — tuned via the eval harness.
     escalate_threshold: float = float(os.getenv("ESCALATE_THRESHOLD", "0.60"))
     local_samples_hard: int = int(os.getenv("LOCAL_SAMPLES_HARD", "2"))
+    # one free local re-attempt (strict prompt) before spending Fireworks tokens.
+    # OFF by default: verifiers check format, not correctness, so a retry can keep
+    # a valid-but-wrong answer (accuracy/gate risk). Enable + A/B only with data.
+    local_retry: bool = os.getenv("LOCAL_RETRY", "0").strip().lower() in ("1", "true", "yes")
     request_timeout: float = float(os.getenv("REQUEST_TIMEOUT", "28"))
     # Baseline switch used by the eval harness: force every task to Fireworks.
     force_remote: bool = os.getenv("FORCE_REMOTE", "0").strip().lower() in ("1", "true", "yes")

@@ -74,3 +74,15 @@ def build_remote_messages(category: str, prompt: str) -> list[dict]:
         {"role": "system", "content": REMOTE_SYSTEM.get(category, "Answer only.")},
         {"role": "user", "content": _compress(prompt)},
     ]
+
+
+def build_retry_messages(category: str, prompt: str) -> list[dict]:
+    """A stricter local re-attempt: emphasize exact output format so a malformed
+    first answer becomes verifiable — recovering the task locally for 0 tokens."""
+    strict = system_for(category) + (
+        " Be precise and output ONLY the answer in the exact required format — "
+        "no explanation, no preamble, no code fences unless the answer is code.")
+    return [
+        {"role": "system", "content": strict},
+        {"role": "user", "content": prompt},
+    ]
