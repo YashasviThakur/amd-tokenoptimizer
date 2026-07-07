@@ -73,7 +73,6 @@ def _write_json(path: str, obj) -> None:
 def run() -> dict:
     t0 = time.time()
     meter = RemoteMeter()
-    local = Model(config.local_base_url, config.local_api_key, config.request_timeout)
     remote = Model(config.fireworks_base_url, config.fireworks_api_key, config.request_timeout, meter=meter)
 
     try:
@@ -87,7 +86,7 @@ def run() -> dict:
     results, meta, routes = [], [], {}
     for task in tasks:
         try:
-            r = route(task, local, remote)
+            r = route(task, remote)
         except Exception as e:  # never let one task sink the batch
             r = {"task_id": task.get("task_id"), "answer": "", "route": "error",
                  "category": "?", "error": str(e)}

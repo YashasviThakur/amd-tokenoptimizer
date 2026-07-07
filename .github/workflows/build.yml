@@ -23,11 +23,6 @@ jobs:
       - name: Lowercase owner for GHCR
         run: echo "OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
 
-      - name: Free some disk (model bake needs room)
-        run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android || true
-          df -h | head -2
-
       - name: Build image (linux/amd64)
         run: |
           docker build -f docker/agent.Dockerfile \
@@ -39,7 +34,7 @@ jobs:
           docker run --rm --entrypoint python \
             ghcr.io/${OWNER}/${IMAGE}:latest -m agent.main --selftest
 
-      - name: Local-path smoke (remote disabled -> exercises baked ollama model)
+      - name: Offline solver-path smoke (no Fireworks -> plain-code answers)
         run: |
           mkdir -p in out
           cp docker/sample_input/tasks.json in/tasks.json
@@ -50,9 +45,9 @@ jobs:
           python - <<'PY'
           import json
           d = json.load(open("out/results.json", encoding="utf-8"))
-          assert isinstance(d, list) and len(d) >= 1, d
-          assert all(isinstance(x.get("task_id"), str) and isinstance(x.get("answer"), str) for x in d), d
-          print("results.json OK:", len(d), "answers")
+          assert isinstance(d, list) and len(d) == 4, d
+          assert all(isinstance(x.get("task_id"), str) and isinstance(x.get("answer"), str) and x["answer"] for x in d), d
+          print("solver answers:", [x["answer"] for x in d])
           PY
 
       - name: Log in to GHCR
