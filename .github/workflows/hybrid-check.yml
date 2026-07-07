@@ -1,0 +1,57 @@
+name: hybrid-check
+
+# Manually-run end-to-end check: pulls the built image and runs the FULL hybrid
+# (baked local ollama model + a REAL Fireworks escalation) on a few tasks, so we
+# prove both halves work together in the container. Uses the FIREWORKS_API_KEY
+# repo secret. Kept manual (workflow_dispatch) so it never burns credits on a
+# normal push.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  hybrid:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lowercase owner
+        run: echo "OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Pull the built image
+        run: docker pull ghcr.io/${OWNER}/tokenoptimizer-agent:latest
+
+      - name: Run full hybrid (local model + real Fireworks)
+        env:
+          FW_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+        run: |
+          if [ -z "$FW_KEY" ]; then echo "::error::FIREWORKS_API_KEY secret not set"; exit 1; fi
+          mkdir -p in out
+          cp docker/sample_hybrid_tasks.json in/tasks.json
+          docker run --rm \
+            -e FIREWORKS_API_KEY="$FW_KEY" \
+            -e FIREWORKS_BASE_URL=https://api.fireworks.ai/inference/v1 \
+            -e ALLOWED_MODELS=accounts/fireworks/models/deepseek-v4-pro \
+            -e REMOTE_MODEL=accounts/fireworks/models/deepseek-v4-pro \
+            -e INPUT_PATH=/input/tasks.json -e OUTPUT_PATH=/output/results.json \
+            -v "$PWD/in:/input" -v "$PWD/out:/output" \
+            ghcr.io/${OWNER}/tokenoptimizer-agent:latest | tee run.log
+
+      - name: Validate output + show routing
+        run: |
+          python - <<'PY'
+          import json
+          d = json.load(open("out/results.json", encoding="utf-8"))
+          assert isinstance(d, list) and len(d) == 4, d
+          assert all(isinstance(x.get("task_id"), str) and isinstance(x.get("answer"), str) and x["answer"] for x in d), d
+          for x in d:
+              print(f"  {x['task_id']}: {x['answer'][:60]!r}")
+          print("results.json OK")
+          PY
+          echo "--- agent summary ---"; grep '\[agent\]' run.log || true
