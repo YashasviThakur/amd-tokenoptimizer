@@ -1,10 +1,11 @@
-# TokenOptimizer — Hybrid Token-Efficient Routing Agent
+# TokenOptimizer — Token-Efficient Agent
 
 **AMD Developer Hackathon: ACT II · Track 1**
 
 A batch AI agent that completes a fixed set of tasks using the **fewest Fireworks
-tokens possible** — answering everything it safely can on a free local model and
-escalating to Fireworks AI only when a local answer can't be trusted.
+tokens possible** — answering with **plain deterministic code** wherever it can
+(zero tokens) and calling the **cheapest allowed Fireworks model** only when a
+task genuinely needs an LLM.
 
 ## 🐳 Submission image (public, `linux/amd64`)
 
@@ -27,70 +28,50 @@ you write `/output/results.json`, exit 0. Then:
    **excluded from the leaderboard.**
 2. **Token ranking** — passing submissions are ranked **ascending by total tokens
    through `FIREWORKS_BASE_URL`.** Fewer tokens = higher rank.
-3. **Local tokens count as zero.**
+3. **Only Fireworks calls are scored.** Per the organizers there is **no local
+   LLM** — each task is answered either by **plain deterministic code (0 tokens)**
+   or by a **Fireworks call** to an `ALLOWED_MODELS` model.
 
-So the entire game is a constrained optimization:
-
-> **Answer as many tasks as possible on the free local model; escalate to
-> Fireworks only where local would fail the gate; and when you do escalate, spend
-> the minimum tokens.**
-
-Our routing does exactly that, across all eight capability categories (factual,
-math, sentiment, summarization, NER, code-debug, logic, code-gen):
+So the game is: **answer as much as possible with deterministic code, and for the
+rest, spend the fewest Fireworks tokens per task.**
 
 ```
 per task ──▶ classify category (free, heuristic)
-          ──▶ math? try exact calculator ....................... 0 tokens, exact
-          ──▶ local model answer (+ self-consistency on unsure categories)
-          ──▶ confidence = category prior + free verifiers + sample agreement
-                 confident?  keep local answer ................. 0 tokens
-                 unsure?     escalate → smallest capable Fireworks model,
-                                        tiny prompt, hard token cap
+          ──▶ deterministic solver? (arithmetic / % / average / ordering / syllogism …)
+                 yes → answer with plain code ................... 0 tokens, exact
+                 no  → cheapest capable Fireworks model,
+                       minimal prompt · max_tokens cap · reasoning_effort=low
 ```
 
-Free/local levers do the work: **deterministic solvers** (exact arithmetic +
-percentage/discount/speed word-problems, a transitive-ordering solver for
-comparative puzzles, and a syllogism checker) that answer whole categories for
-zero tokens; **self-consistency sampling** (disagreement = escalate); **hard
-verifiers** (valid number / valid JSON / code compiles / real sentiment label /
-length constraint); and **category priors**. When we must escalate, prompts are
-compressed with a ~3-token system nudge and a per-category `max_tokens` cap, and
-any chain-of-thought happens locally for free.
+The **deterministic solvers** are the only free path — an exact arithmetic /
+percentage / discount / speed / average calculator, a transitive-ordering solver
+for comparative puzzles, and a syllogism checker — each answering whole task
+types for **zero tokens**, and red-teamed to never emit a wrong answer (they
+defer to Fireworks when unsure). For everything else, each Fireworks call is
+minimized: a ~3-token system prompt, compressed input, a per-category
+`max_tokens` cap, `reasoning_effort=low`, and cheapest-model selection.
 
 ## Measured result (local eval harness, 32 tasks across all 8 categories)
 
-The token cut is a direct function of local-model quality — the harness makes
-that knob explicit:
+Every task the deterministic solvers handle costs **0 tokens**; the rest go to
+Fireworks. Savings therefore come from solver coverage + minimal Fireworks calls:
 
-**Dev set (32 tasks, tuned):**
+| Config | Accuracy | Fireworks tokens | Cut vs baseline |
+|--------|:--------:|:----------------:|:---------------:|
+| baseline — every task → Fireworks | 96.9% | 2164 | — |
+| **code + Fireworks (compliant)**  | **96.9%** | **1429** | **34%** |
 
-| Local model (free tier)            | Accuracy | Fireworks tokens | Cut vs baseline |
-|------------------------------------|:--------:|:----------------:|:---------------:|
-| baseline — every task → Fireworks  |  96.9%   |       2140       |        —        |
-| generic small (2B)                 |  90.6%   |        273       |    **87.2%**    |
-| code-capable (~3-4B, e.g. Qwen2.5-Coder-3B) | 96.9% | **126**   |    **94.1%**    |
-
-**Held-out generalization — 96 unseen, adversarially-generated tasks the router
-was never tuned on (the honest number):**
-
-| Local model | Accuracy (gate 80%) | Cut vs baseline |
-|-------------|:-------------------:|:---------------:|
-| generic 2B  |     88.5% ✓         |     64.6%       |
-| code-capable ~3B | 93.8% ✓        |     77.3%       |
-
-Reproduce:
+Accuracy stays high because anything code can't solve goes to a strong Fireworks
+model. Reproduce:
 
 ```bash
-python -m eval.harness --profile strong                         # dev
-python -m eval.harness --profile strong \
-  --tasks eval/datasets/stress_tasks.json \
-  --expected eval/datasets/stress_expected.json                  # held-out
+python -m eval.harness
 ```
 
-Absolute numbers depend on the real task mix and model; the point is a **working,
-tunable pipeline** — free deterministic solvers (arithmetic, ordering,
-syllogism), minimal/compressed remote prompts, self-consistency + verifier
-routing — plus the harness to re-tune it once the real models are in hand.
+The token cut scales directly with how many tasks plain code can answer — so the
+lever is **broadening the deterministic solvers** (and minimizing tokens per
+Fireworks call: `reasoning_effort=low`, tight `max_tokens`, cheapest model,
+batching).
 
 ## Run the eval today (no GPU, no keys)
 
