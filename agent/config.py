@@ -32,18 +32,9 @@ class Config:
     # while keeping accuracy on the hard tasks we escalate. Ignored if unsupported.
     reasoning_effort: str = os.getenv("REASONING_EFFORT", "low")
 
-    # Local model — free tokens. Any OpenAI-compatible server (llama.cpp/ollama/vLLM).
-    local_base_url: str = os.getenv("LOCAL_BASE_URL", "http://localhost:8000/v1")
-    local_api_key: str = os.getenv("LOCAL_API_KEY", "EMPTY")
-    local_model: str = os.getenv("LOCAL_MODEL", "local-small")
-
-    # Routing knobs — tuned via the eval harness.
+    # Retained only for the eval harness threshold sweep; the compliant agent
+    # answers with code or Fireworks and does not use a routing threshold.
     escalate_threshold: float = float(os.getenv("ESCALATE_THRESHOLD", "0.60"))
-    local_samples_hard: int = int(os.getenv("LOCAL_SAMPLES_HARD", "2"))
-    # one free local re-attempt (strict prompt) before spending Fireworks tokens.
-    # OFF by default: verifiers check format, not correctness, so a retry can keep
-    # a valid-but-wrong answer (accuracy/gate risk). Enable + A/B only with data.
-    local_retry: bool = os.getenv("LOCAL_RETRY", "0").strip().lower() in ("1", "true", "yes")
     request_timeout: float = float(os.getenv("REQUEST_TIMEOUT", "28"))
     # pack up to N same-category short-answer tasks per Fireworks call (amortizes
     # per-call overhead). 1 disables batching.

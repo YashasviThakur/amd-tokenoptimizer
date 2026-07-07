@@ -1,9 +1,10 @@
-"""Free, local checks that tell the router whether to trust a local answer.
+"""Free, model-free checks + an exact arithmetic calculator (zero tokens).
 
-None of these call a model. They turn "is the local answer plausibly correct?"
-into cheap signals: a valid number for math, parseable JSON for NER, compilable
-code for code tasks, a real label for sentiment, a length-constrained summary.
-Plus a deterministic calculator that answers pure-arithmetic math for free.
+None of these call a model. They turn "is this answer well-formed?" into cheap
+signals used by the solvers and the eval judge: a valid number for math,
+parseable JSON for NER, compilable code for code tasks, a real label for
+sentiment, a length-constrained summary. Plus a deterministic calculator that
+answers pure-arithmetic math for free.
 """
 from __future__ import annotations
 

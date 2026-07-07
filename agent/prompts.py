@@ -2,7 +2,6 @@
 
 Every remote token counts, so system prompts are terse, outputs are constrained
 to exactly what the judge needs, and max_tokens is capped hard per category.
-Local prompts are the same shape (local is free, but short answers are faster).
 """
 from __future__ import annotations
 

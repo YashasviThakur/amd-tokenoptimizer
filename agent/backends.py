@@ -1,8 +1,8 @@
-"""Model backends: a local (free) and a remote (Fireworks, metered) client.
+"""Fireworks backend: one metered OpenAI /chat/completions client.
 
-Both speak the OpenAI /chat/completions schema over HTTP, so `local` is any
-llama.cpp/ollama/vLLM server and `remote` is Fireworks via FIREWORKS_BASE_URL.
-Only remote tokens are metered — they are the score.
+`remote` talks to Fireworks via FIREWORKS_BASE_URL. Every task is answered by
+plain deterministic code (0 tokens) or a call through here — the tokens metered
+here are the score.
 """
 from __future__ import annotations
 

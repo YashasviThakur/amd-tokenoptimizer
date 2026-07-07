@@ -1,6 +1,0 @@
-[
-  {"task_id": "h1", "prompt": "What is 15% of 240?"},
-  {"task_id": "h2", "prompt": "Tom is older than Sara. Sara is older than Mike. Who is the oldest?"},
-  {"task_id": "h3", "prompt": "What is the capital of Japan?"},
-  {"task_id": "h4", "prompt": "Prove that the square root of 2 is irrational, and briefly explain each step."}
-]

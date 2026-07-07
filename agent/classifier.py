@@ -2,7 +2,8 @@
 
 Categories: factual, math, sentiment, summarization, ner, code_debug,
 logic, code_gen. Keeping this heuristic (not a model call) keeps it free and
-instant — the router uses the category to set the escalation policy.
+instant — the router uses the category to pick the free solver and the
+token-minimal Fireworks prompt/caps.
 """
 from __future__ import annotations
 
@@ -12,11 +13,6 @@ CATEGORIES = (
     "factual", "math", "sentiment", "summarization",
     "ner", "code_debug", "logic", "code_gen",
 )
-
-# Categories where a small local model is usually enough -> rarely escalate.
-EASY = {"sentiment", "ner", "summarization", "factual"}
-# Categories that often need the frontier model -> verify hard, escalate on doubt.
-HARD = {"math", "logic", "code_debug", "code_gen"}
 
 _CODE_HINT = re.compile(r"```|def |class |function |\bcode\b|python|javascript|java\b|c\+\+")
 _CODE_BLOCK = re.compile(r"\bdef\s+\w+\s*\(|```|\bclass\s+\w+\s*[:(]")
