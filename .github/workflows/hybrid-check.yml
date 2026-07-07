@@ -55,3 +55,29 @@ jobs:
           print("results.json OK")
           PY
           echo "--- agent summary ---"; grep '\[agent\]' run.log || true
+
+      - name: Force-remote path (prove a real in-container Fireworks call works)
+        env:
+          FW_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+        run: |
+          printf '[{"task_id":"r1","prompt":"What is the capital of Italy?"},{"task_id":"r2","prompt":"Name one primary color."}]' > in/tasks.json
+          docker run --rm \
+            -e FORCE_REMOTE=1 \
+            -e FIREWORKS_API_KEY="$FW_KEY" \
+            -e FIREWORKS_BASE_URL=https://api.fireworks.ai/inference/v1 \
+            -e ALLOWED_MODELS=accounts/fireworks/models/deepseek-v4-pro \
+            -e INPUT_PATH=/input/tasks.json -e OUTPUT_PATH=/output/results.json \
+            -v "$PWD/in:/input" -v "$PWD/out:/output" \
+            ghcr.io/${OWNER}/tokenoptimizer-agent:latest | tee force.log
+          python - <<'PY'
+          import json
+          d = json.load(open("out/results.json", encoding="utf-8"))
+          assert len(d) == 2 and all(x["answer"] for x in d), d
+          print("force-remote answers:", [x["answer"][:30] for x in d])
+          PY
+          grep '\[agent\]' force.log
+          if grep -qE "'fireworks_calls': [1-9]" force.log; then
+            echo "✅ REMOTE PATH OK — real Fireworks call succeeded from inside the container"
+          else
+            echo "::error::no Fireworks calls recorded in force-remote run"; exit 1
+          fi
