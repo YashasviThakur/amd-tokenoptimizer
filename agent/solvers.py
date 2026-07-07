@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import collections
 import graphlib
+import math
 import re
 
 from .verifiers import try_arithmetic  # pure expression + "x% of y"
@@ -181,10 +182,57 @@ def solve_math_word(prompt: str) -> str | None:
     return None
 
 
+def solve_math_extra(prompt: str) -> str | None:
+    """Word-form math that isn't a bare expression: powers, roots, factorial,
+    gcd/lcm. Every branch requires an exact keyword and the exact operand count,
+    otherwise defers — so it never guesses on a multi-number problem."""
+    p = prompt.lower().replace(",", "")
+
+    # factorial: "5 factorial", "factorial of 5", "5!" (exactly one number)
+    if "factorial" in p or re.search(r"\b\d+\s*!", p):
+        nums = re.findall(r"\d+", p)
+        if len(nums) == 1 and int(nums[0]) <= 20:
+            return str(math.factorial(int(nums[0])))  # exact int, no float rounding
+
+    # N to the power of M / N raised to (the power of) M
+    m = re.search(r"(\d+(?:\.\d+)?)\s+(?:to the power(?: of)?|raised to(?: the power(?: of)?)?)\s+"
+                  r"(-?\d+(?:\.\d+)?)", p)
+    if m:
+        return _fmt(float(m.group(1)) ** float(m.group(2)))
+
+    # "5 squared" / "the square of 5" (guard against "square root of")
+    m = re.search(r"\b(\d+(?:\.\d+)?)\s+squared\b", p) or re.search(r"\bsquare of\s+(\d+(?:\.\d+)?)", p)
+    if m:
+        return _fmt(float(m.group(1)) ** 2)
+    m = re.search(r"\b(\d+(?:\.\d+)?)\s+cubed\b", p) or re.search(r"\bcube of\s+(\d+(?:\.\d+)?)", p)
+    if m:
+        return _fmt(float(m.group(1)) ** 3)
+
+    m = re.search(r"square root of\s+(\d+(?:\.\d+)?)", p)
+    if m:
+        return _fmt(math.sqrt(float(m.group(1))))
+    m = re.search(r"cube root of\s+(\d+(?:\.\d+)?)", p)
+    if m:
+        return _fmt(round(float(m.group(1)) ** (1.0 / 3.0), 6))
+
+    # gcd / lcm of exactly two integers
+    if re.search(r"\b(?:gcd|greatest common (?:divisor|factor))\b", p):
+        nums = re.findall(r"\d+", p)
+        if len(nums) == 2:
+            return str(math.gcd(int(nums[0]), int(nums[1])))
+    if re.search(r"\b(?:lcm|least common multiple)\b", p):
+        nums = re.findall(r"\d+", p)
+        if len(nums) == 2 and int(nums[0]) and int(nums[1]):
+            a, b = int(nums[0]), int(nums[1])
+            return str(a * b // math.gcd(a, b))
+
+    return None
+
+
 def free_solve(category: str, prompt: str) -> str | None:
     """Dispatch to a free solver for the category, or None to use a model."""
     if category == "math":
-        return try_arithmetic(prompt) or solve_math_word(prompt)
+        return try_arithmetic(prompt) or solve_math_word(prompt) or solve_math_extra(prompt)
     if category == "logic":
         return solve_ordering(prompt) or solve_syllogism(prompt)
     return None
