@@ -4,14 +4,14 @@ Run on the AMD GPU pod (ROCm PyTorch). Teaches a small model to answer each
 category correctly AND in our exact output format, so at eval time more tasks
 are answered locally for 0 tokens. Produces a merged model ready for GGUF export.
 
-    pip install -r finetune/requirements.txt
+    pip install -r finetune/requirements.txt      # torch (ROCm) installed separately
     python finetune/build_jsonl.py
-    python finetune/train_lora.py --base Qwen/Qwen2.5-3B-Instruct --data finetune/train.jsonl
+    python finetune/train_lora.py --base Qwen/Qwen2.5-3B-Instruct
 
-Notes:
-- Keep the base small (~1.5-3B) so the exported GGUF stays runnable on the eval VM.
-- trl's SFT API shifts across versions; if SFTConfig rejects an arg, move it to
-  SFTTrainer(...) or drop it — the LoRA config + chat formatting are the core.
+Uses trl's high-level SFTTrainer: it consumes the conversational dataset
+({"messages":[...]}) directly and applies the chat template itself, so this stays
+robust across trl/transformers versions. If bf16 isn't supported on the GPU,
+pass --fp16.
 """
 from __future__ import annotations
 
@@ -20,7 +20,6 @@ import argparse
 import torch
 from datasets import load_dataset
 from peft import LoraConfig
-from transformers import AutoModelForCausalLM, AutoTokenizer
 from trl import SFTConfig, SFTTrainer
 
 
@@ -30,36 +29,46 @@ def main():
     ap.add_argument("--data", default="finetune/train.jsonl")
     ap.add_argument("--out", default="finetune/out")
     ap.add_argument("--epochs", type=float, default=3.0)
+    ap.add_argument("--fp16", action="store_true", help="use fp16 instead of bf16")
     args = ap.parse_args()
 
-    tok = AutoTokenizer.from_pretrained(args.base)
-    if tok.pad_token is None:
-        tok.pad_token = tok.eos_token
-
-    model = AutoModelForCausalLM.from_pretrained(
-        args.base, torch_dtype=torch.bfloat16, device_map="auto")
-
     ds = load_dataset("json", data_files=args.data, split="train")
-    ds = ds.map(lambda ex: {"text": tok.apply_chat_template(ex["messages"], tokenize=False)},
-                remove_columns=ds.column_names)
+    print(f"training examples: {len(ds)}")
 
     lora = LoraConfig(
         r=16, lora_alpha=32, lora_dropout=0.05, bias="none", task_type="CAUSAL_LM",
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"])
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
+                        "gate_proj", "up_proj", "down_proj"],
+    )
 
-    cfg = SFTConfig(
-        output_dir=args.out, num_train_epochs=args.epochs,
-        per_device_train_batch_size=2, gradient_accumulation_steps=8,
-        learning_rate=2e-4, bf16=True, logging_steps=10, save_strategy="epoch",
-        max_seq_length=1024, packing=False, dataset_text_field="text")
+    sft = SFTConfig(
+        output_dir=args.out,
+        num_train_epochs=args.epochs,
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=4,
+        learning_rate=2e-4,
+        logging_steps=5,
+        save_strategy="no",
+        bf16=not args.fp16,
+        fp16=args.fp16,
+    )
 
-    trainer = SFTTrainer(model=model, args=cfg, train_dataset=ds, peft_config=lora, tokenizer=tok)
+    trainer = SFTTrainer(model=args.base, args=sft, train_dataset=ds, peft_config=lora)
     trainer.train()
 
-    merged = trainer.model.merge_and_unload()
+    adapter = args.out + "-adapter"
+    trainer.save_model(adapter)
+    print("adapter saved ->", adapter)
+
+    # merge LoRA into the base so it can be exported to GGUF
+    from peft import AutoPeftModelForCausalLM
+    from transformers import AutoTokenizer
+
+    merged = AutoPeftModelForCausalLM.from_pretrained(
+        adapter, torch_dtype=torch.float16).merge_and_unload()
     merged.save_pretrained(args.out + "-merged")
-    tok.save_pretrained(args.out + "-merged")
-    print("Merged model saved to", args.out + "-merged", "-> export to GGUF next (see finetune/README.md)")
+    AutoTokenizer.from_pretrained(args.base).save_pretrained(args.out + "-merged")
+    print("MERGED MODEL ->", args.out + "-merged", "(export to GGUF next; see finetune/README.md)")
 
 
 if __name__ == "__main__":

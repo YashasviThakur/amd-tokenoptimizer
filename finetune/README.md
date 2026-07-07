@@ -38,6 +38,27 @@ printf 'FROM ./tokenopt-q4.gguf\n' > Modelfile
 ollama create tokenoptimizer-local -f Modelfile
 ```
 
+## Apple Silicon path (MacBook M‑series, e.g. M4 16 GB)
+
+Unified memory + **MLX** is the easy, native route — no CUDA, no bitsandbytes.
+A 1.5B LoRA fits comfortably in 16 GB; 3B is tight but possible.
+
+```bash
+pip install mlx-lm
+# mlx-lm reads train.jsonl / valid.jsonl (chat format {"messages":[...]} is supported)
+mkdir -p ftdata && cp finetune/train.jsonl ftdata/train.jsonl && cp finetune/train.jsonl ftdata/valid.jsonl
+
+# LoRA fine-tune (1.5B is the safe pick on a fanless Air)
+python -m mlx_lm.lora --model Qwen/Qwen2.5-1.5B-Instruct --train --data ftdata \
+  --iters 300 --batch-size 1 --num-layers 8
+
+# fuse the adapter back into the base -> HF-format model in ./fused-model
+python -m mlx_lm.fuse --model Qwen/Qwen2.5-1.5B-Instruct --adapter-path adapters --save-path fused-model
+```
+Then convert `fused-model` to GGUF + quantize with llama.cpp (same as step 3
+above) and bundle. Note: the MacBook **Air** is fanless, so it thermal‑throttles
+on sustained training — a 200‑example LoRA run is short (minutes), so it's fine.
+
 ## Bundle into the container
 In `docker/agent.Dockerfile`, replace the model bake:
 
