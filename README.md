@@ -172,9 +172,8 @@ eval/
 docker/agent.Dockerfile   the submission image recipe
 ```
 
-> `src/tokenoptimizer/` + `web/` are an earlier interactive gateway + cost
-> dashboard, kept only as a local visualizer. They are **not** part of the Track-1
-> submission (which is headless `agent/` + `eval/`) and never enter the scored image.
+The repo is exactly the Track-1 submission — `agent/` (the scored image) plus
+`eval/` (a local harness to measure it). Nothing else ships.
 
 ## License
 
