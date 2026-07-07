@@ -1,0 +1,386 @@
+[
+ {
+  "task_id": "gf01",
+  "prompt": "What is the chemical symbol for gold?"
+ },
+ {
+  "task_id": "gf02",
+  "prompt": "In what year did the first human land on the Moon? Give the year only."
+ },
+ {
+  "task_id": "gf03",
+  "prompt": "What is the capital city of Australia?"
+ },
+ {
+  "task_id": "gf04",
+  "prompt": "How many bones are in the adult human body?"
+ },
+ {
+  "task_id": "gf05",
+  "prompt": "Who wrote the play 'Romeo and Juliet'?"
+ },
+ {
+  "task_id": "gf06",
+  "prompt": "What is the speed of light in a vacuum, in kilometers per second (approximate to the nearest thousand)?"
+ },
+ {
+  "task_id": "gf07",
+  "prompt": "What is the largest planet in our Solar System?"
+ },
+ {
+  "task_id": "gf08",
+  "prompt": "The freezing point of water at sea level is 0 degrees on which temperature scale — Celsius or Fahrenheit? Answer with the scale name."
+ },
+ {
+  "task_id": "gf09",
+  "prompt": "How many sides does a heptagon have?"
+ },
+ {
+  "task_id": "gf10",
+  "prompt": "Which element has the atomic number 1?"
+ },
+ {
+  "task_id": "gf11",
+  "prompt": "A trick question: which weighs more, a kilogram of feathers or a kilogram of steel? Answer 'same', 'feathers', or 'steel'."
+ },
+ {
+  "task_id": "gf12",
+  "prompt": "What is the SI base unit of electric current? Give the unit name."
+ },
+ {
+  "task_id": "gm01",
+  "prompt": "A jacket costs $80. It's on sale for 25% off. What is the sale price in dollars?"
+ },
+ {
+  "task_id": "gm02",
+  "prompt": "A train travels 240 kilometers in 3 hours at constant speed. What is its speed in kilometers per hour?"
+ },
+ {
+  "task_id": "gm04",
+  "prompt": "A shirt originally priced at $50 is discounted by 20%, then an additional 10% is taken off the discounted price. What is the final price in dollars?"
+ },
+ {
+  "task_id": "gm06",
+  "prompt": "A car uses 12 liters of fuel to travel 150 km. How many liters does it need to travel 400 km at the same rate?"
+ },
+ {
+  "task_id": "gm07",
+  "prompt": "A number increased by 40% becomes 70. What was the original number?"
+ },
+ {
+  "task_id": "gm08",
+  "prompt": "A store raises a $200 item by 10%, then later lowers the new price by 10%. What is the final price in dollars?"
+ },
+ {
+  "task_id": "gm09",
+  "prompt": "Two workers can build a wall in 6 hours. Working at the same rate, how many hours would 3 workers take to build the same wall?"
+ },
+ {
+  "task_id": "gm10",
+  "prompt": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost in cents?"
+ },
+ {
+  "task_id": "gm11",
+  "prompt": "Compute the average of 12, 18, and 30."
+ },
+ {
+  "task_id": "gm12",
+  "prompt": "A shopkeeper buys an item for $80 and sells it for $100. What is the profit percentage?"
+ },
+ {
+  "task_id": "gs01",
+  "prompt": "Classify the sentiment of this review as positive, negative, or neutral. Reply with exactly one word.\n\n\"Absolutely love this blender — it crushes ice in seconds and the design looks gorgeous on my counter.\""
+ },
+ {
+  "task_id": "gs02",
+  "prompt": "Classify the sentiment of this message as positive, negative, or neutral. Reply with exactly one word.\n\n\"The package arrived two weeks late, the box was crushed, and half the parts were missing.\""
+ },
+ {
+  "task_id": "gs03",
+  "prompt": "Classify the sentiment of this statement as positive, negative, or neutral. Reply with exactly one word.\n\n\"The meeting is scheduled for 3 PM in conference room B on the second floor.\""
+ },
+ {
+  "task_id": "gs04",
+  "prompt": "Classify the overall sentiment of this sarcastic review as positive, negative, or neutral. Reply with exactly one word.\n\n\"Oh great, another software update that breaks everything and adds nothing. Just what I always wanted.\""
+ },
+ {
+  "task_id": "gs05",
+  "prompt": "Classify the sentiment of this tweet as positive, negative, or neutral. Reply with exactly one word.\n\n\"Wow, my flight got cancelled AND they lost my luggage. Best trip ever. 🙄\""
+ },
+ {
+  "task_id": "gs06",
+  "prompt": "A review contains both praise and complaints. Judge the OVERALL sentiment as positive, negative, or neutral. Reply with exactly one word.\n\n\"The food was delicious and beautifully plated, but the service was painfully slow and the waiter was rude. On balance I left frustrated and won't return.\""
+ },
+ {
+  "task_id": "gs07",
+  "prompt": "A review contains both pros and cons. Judge the OVERALL sentiment as positive, negative, or neutral. Reply with exactly one word.\n\n\"Battery life is a bit shorter than I hoped, but honestly the camera, screen, and speed are so good that I'm thrilled with this phone.\""
+ },
+ {
+  "task_id": "gs08",
+  "prompt": "Classify the sentiment of this factual statement as positive, negative, or neutral. Reply with exactly one word.\n\n\"The report is 42 pages long and was submitted on Monday.\""
+ },
+ {
+  "task_id": "gs09",
+  "prompt": "Classify the sentiment of this customer comment as positive, negative, or neutral. Reply with exactly one word.\n\n\"It works. Does what it says. Nothing more to add.\""
+ },
+ {
+  "task_id": "gs10",
+  "prompt": "Classify the sentiment of this heartfelt message as positive, negative, or neutral. Reply with exactly one word.\n\n\"Thank you so much for staying up late to help me fix my resume — you genuinely made my week.\""
+ },
+ {
+  "task_id": "gs11",
+  "prompt": "This comment uses negation. Classify the true sentiment as positive, negative, or neutral. Reply with exactly one word.\n\n\"I can't say I'm unhappy with how this turned out — it exceeded every expectation I had.\""
+ },
+ {
+  "task_id": "gs12",
+  "prompt": "This review is dryly sarcastic. Classify the true sentiment as positive, negative, or neutral. Reply with exactly one word.\n\n\"If you enjoy waiting 45 minutes on hold just to be hung up on, this support line is truly a five-star experience.\""
+ },
+ {
+  "task_id": "gu01",
+  "prompt": "Summarize the following passage in one sentence:\n\n\"The city council voted on Tuesday to approve a new bike-lane network spanning 40 miles across downtown. Supporters say it will reduce traffic congestion and cut carbon emissions, while critics worry about lost parking spaces. Construction is expected to begin next spring and finish within two years.\""
+ },
+ {
+  "task_id": "gu02",
+  "prompt": "In no more than 15 words, summarize: \"After a decade of research, scientists at the institute announced they had developed a vaccine that prevents the mosquito-borne disease in early trials, offering hope to millions in tropical regions.\""
+ },
+ {
+  "task_id": "gu04",
+  "prompt": "Give a one-sentence summary:\n\n\"Heavy rainfall over the weekend caused the river to overflow its banks, flooding several low-lying neighborhoods. Emergency crews evacuated more than 500 residents, and officials estimate damages could exceed two million dollars.\""
+ },
+ {
+  "task_id": "gu05",
+  "prompt": "Summarize the following in one concise sentence:\n\n\"The novel follows a young cartographer who, while mapping a remote coastline, uncovers letters revealing her grandmother's secret past as a wartime spy. As she retraces the old routes, she confronts questions about identity, memory, and inherited silence.\""
+ },
+ {
+  "task_id": "gu06",
+  "prompt": "Summarize this text in one sentence. Note that the passage argues AGAINST the proposal it describes:\n\n\"Proponents of the new tax claim it will fund schools, but the evidence is thin. Similar taxes elsewhere raised little revenue while burdening small businesses. Until backers show real data, the council should reject the measure.\""
+ },
+ {
+  "task_id": "gu07",
+  "prompt": "Summarize in one sentence:\n\n\"The spacecraft completed its flyby of the distant moon, capturing high-resolution images that revealed ice geysers erupting from surface fractures. Scientists say the plumes suggest a subsurface ocean that could potentially harbor microbial life.\""
+ },
+ {
+  "task_id": "gu08",
+  "prompt": "Condense to one sentence:\n\n\"The workshop covered three topics: first, how to structure a resume for maximum impact; second, techniques for answering behavioral interview questions; and third, strategies for negotiating a salary offer. Attendees left with a checklist for each stage of the job search.\""
+ },
+ {
+  "task_id": "gu09",
+  "prompt": "Summarize this multi-topic news brief in one sentence that captures the MAIN event (the first and most emphasized item):\n\n\"Breaking: the national airline announced it will ground its entire fleet for 48 hours after a software fault was found in its booking system, stranding thousands of passengers. In unrelated news, the stock market closed slightly higher, and a local bakery won a regional award.\""
+ },
+ {
+  "task_id": "gu10",
+  "prompt": "Provide a one-sentence summary:\n\n\"Regular exercise, even brief daily walks, has been linked to improved cardiovascular health, better sleep, and reduced anxiety. Researchers emphasize consistency matters more than intensity for long-term benefits.\""
+ },
+ {
+  "task_id": "gu12",
+  "prompt": "This is a tricky one: summarize the passage's CONCLUSION in one sentence, ignoring the setup. \"For years, analysts assumed remote work would permanently shrink demand for office space. Early data seemed to confirm this. But the latest report reverses that view: office leasing has rebounded to near pre-pandemic levels as companies mandate return-to-office policies.\""
+ },
+ {
+  "task_id": "gn01",
+  "prompt": "Extract all named entities (person, org, location, date) from this sentence as JSON:\n\"Tim Cook announced the new iPhone at Apple headquarters in Cupertino on September 12, 2023.\""
+ },
+ {
+  "task_id": "gn02",
+  "prompt": "Extract named entities (person, org, location, date) as JSON from:\n\"Angela Merkel visited the United Nations in New York on March 3, 2015.\""
+ },
+ {
+  "task_id": "gn03",
+  "prompt": "Return the named entities (person, org, location, date) as JSON for:\n\"Serena Williams signed with Nike in Paris back in 2010.\""
+ },
+ {
+  "task_id": "gn06",
+  "prompt": "Return named entities (person, org, location, date) as JSON:\n\"Dr. Watson wrote a report for Scotland Yard in London on Christmas Day 1895.\""
+ },
+ {
+  "task_id": "gn07",
+  "prompt": "Extract named entities (person, org, location, date) as JSON:\n\"Amazon opened a new warehouse near Seattle last Tuesday.\""
+ },
+ {
+  "task_id": "gn08",
+  "prompt": "Extract named entities (person, org, location, date) as JSON from:\n\"Washington signed the treaty in Washington on the first of January.\" (Note: the first mention is the person George Washington, the second is the city.)"
+ },
+ {
+  "task_id": "gn10",
+  "prompt": "Extract named entities (person, org, location, date) as JSON:\n\"On 15 August 1947, Jawaharlal Nehru addressed the crowd from the Red Fort in Delhi.\""
+ },
+ {
+  "task_id": "gn11",
+  "prompt": "Extract named entities (person, org, location, date) as JSON from:\n\"Netflix acquired the studio in Los Angeles yesterday.\""
+ },
+ {
+  "task_id": "gn12",
+  "prompt": "Return named entities (person, org, location, date) as JSON. Note that \"Ford\" here refers to the person Henry Ford's friend, President Gerald Ford, not the car company:\n\"Gerald Ford met the Toyota executives in Detroit on November 20th, 1975.\""
+ },
+ {
+  "task_id": "gd01",
+  "prompt": "This function should return the sum of a list of numbers, but it returns the wrong result because the accumulator starts at the first element yet the loop also re-adds it. Fix it.\n\ndef total(nums):\n    s = nums[0]\n    for n in nums:\n        s += n\n    return s"
+ },
+ {
+  "task_id": "gd02",
+  "prompt": "This function is supposed to return True if a string is a palindrome (case-insensitive), but it always returns False for valid palindromes. Fix the bug.\n\ndef is_palindrome(s):\n    s = s.lower()\n    return s == s.reverse()"
+ },
+ {
+  "task_id": "gd03",
+  "prompt": "Fix this function so it correctly returns the factorial of n. The base case is wrong and causes infinite recursion / returns 0.\n\ndef factorial(n):\n    if n == 0:\n        return 0\n    return n * factorial(n - 1)"
+ },
+ {
+  "task_id": "gd04",
+  "prompt": "This function should count vowels in a string but it misses 'u' and is case-sensitive. Correct it to count a, e, i, o, u case-insensitively.\n\ndef count_vowels(s):\n    vowels = 'aeio'\n    return sum(1 for c in s if c in vowels)"
+ },
+ {
+  "task_id": "gd05",
+  "prompt": "The default mutable argument bug: this function appends to a list that unexpectedly persists across calls. Fix it so each call starts with a fresh list.\n\ndef add_item(item, bucket=[]):\n    bucket.append(item)\n    return bucket"
+ },
+ {
+  "task_id": "gd06",
+  "prompt": "This function should return the maximum value in a non-empty list without using built-in max(). It currently returns the wrong value because it initializes the running max to 0. Fix it to work with all-negative lists too.\n\ndef my_max(nums):\n    m = 0\n    for n in nums:\n        if n > m:\n            m = n\n    return m"
+ },
+ {
+  "task_id": "gd07",
+  "prompt": "Fix this function so it returns the number of times target appears in the list. It currently returns after the first match instead of counting all occurrences.\n\ndef count_occurrences(lst, target):\n    count = 0\n    for x in lst:\n        if x == target:\n            count += 1\n            return count\n    return count"
+ },
+ {
+  "task_id": "gd08",
+  "prompt": "This function divides two numbers but crashes on a zero divisor. Make it return None when b is 0 instead of raising an exception, otherwise return a / b.\n\ndef safe_divide(a, b):\n    return a / b"
+ },
+ {
+  "task_id": "gd09",
+  "prompt": "Tricky: this function is meant to return a new list with duplicates removed while preserving the original order of first appearance. Using set() breaks the ordering guarantee. Fix it so order is preserved.\n\ndef dedupe(items):\n    return list(set(items))"
+ },
+ {
+  "task_id": "gd10",
+  "prompt": "Tricky off-by-one: this function should return the first n Fibonacci numbers as a list, starting [0, 1, 1, 2, ...]. For n=5 it currently returns the wrong number of elements. Fix it so len(result) == n.\n\ndef fib(n):\n    seq = [0, 1]\n    while len(seq) < n:\n        seq.append(seq[-1] + seq[-2])\n    return seq"
+ },
+ {
+  "task_id": "gd11",
+  "prompt": "Tricky closure bug: this function should return a list of functions where the i-th function returns i. Due to late binding, every returned function returns the same value. Fix it so funcs[k]() returns k.\n\ndef make_funcs():\n    funcs = []\n    for i in range(3):\n        funcs.append(lambda: i)\n    return funcs"
+ },
+ {
+  "task_id": "gd12",
+  "prompt": "This function should return the average of a list of numbers, but it uses integer division and crashes on an empty list. Fix both: use true division and return 0 for an empty list.\n\ndef average(nums):\n    return sum(nums) // len(nums)"
+ },
+ {
+  "task_id": "gl01",
+  "prompt": "Anna is taller than Ben. Ben is taller than Carl. Who is the shortest of the three?"
+ },
+ {
+  "task_id": "gl02",
+  "prompt": "In a race, Maya finished ahead of Leo, and Leo finished ahead of Nina. There were no ties. Who won the race?"
+ },
+ {
+  "task_id": "gl03",
+  "prompt": "All roses are flowers. All flowers need water. Do all roses need water? Answer yes or no."
+ },
+ {
+  "task_id": "gl04",
+  "prompt": "Five friends are ranked by score. Priya scored higher than Raj. Raj scored higher than Sam. Tom scored higher than Priya. Uma scored the lowest of all five. List the number of people who scored higher than Sam."
+ },
+ {
+  "task_id": "gl05",
+  "prompt": "Some cats are black. All black things absorb heat. Does it logically follow that ALL cats absorb heat? Answer yes or no."
+ },
+ {
+  "task_id": "gl06",
+  "prompt": "Box A is heavier than Box B. Box C is lighter than Box B. Box D is heavier than Box A. Which box is the heaviest?"
+ },
+ {
+  "task_id": "gl07",
+  "prompt": "If today is not Monday, and yesterday was Sunday, what day is today?"
+ },
+ {
+  "task_id": "gl08",
+  "prompt": "Three siblings sit in a row. Emma is not on either end. Frank sits to the left of Emma. Grace sits to the right of Emma. Who sits in the middle?"
+ },
+ {
+  "task_id": "gl09",
+  "prompt": "No fish can fly. Some pets are fish. Can we conclude that some pets cannot fly? Answer yes or no."
+ },
+ {
+  "task_id": "gl10",
+  "prompt": "A is older than B. C is older than A. B is older than D. Rank from oldest to youngest and state who is the second oldest."
+ },
+ {
+  "task_id": "gl11",
+  "prompt": "All squares are rectangles. This shape is a rectangle. Does it necessarily follow that this shape is a square? Answer yes or no."
+ },
+ {
+  "task_id": "gl12",
+  "prompt": "Seven runners finish a race with no ties. Kai finishes exactly in the middle position. How many runners finish ahead of Kai?"
+ },
+ {
+  "task_id": "gg03",
+  "prompt": "Write a Python function `reverse_string(s)` that returns the string s reversed. Use slicing."
+ },
+ {
+  "task_id": "gg04",
+  "prompt": "Write a Python function `count_vowels(s)` that returns the number of vowels (a, e, i, o, u, case-insensitive) in the string s."
+ },
+ {
+  "task_id": "gg05",
+  "prompt": "Write a Python function `fizzbuzz(n)` that returns 'FizzBuzz' if n is divisible by both 3 and 5, 'Fizz' if divisible by 3, 'Buzz' if divisible by 5, otherwise the string form of n. Check divisibility by 15 first."
+ },
+ {
+  "task_id": "gg06",
+  "prompt": "Write a Python function `is_palindrome(s)` that returns True if s reads the same forwards and backwards after lowercasing and ignoring all non-alphanumeric characters."
+ },
+ {
+  "task_id": "gg08",
+  "prompt": "Write a Python function `merge_dicts(a, b)` that returns a new dictionary combining a and b. On key conflicts, values from b win. Do not mutate the inputs."
+ },
+ {
+  "task_id": "gg09",
+  "prompt": "Write a Python function `chunk(lst, size)` that splits list lst into consecutive sublists of length `size`; the final chunk may be shorter. Assume size >= 1."
+ },
+ {
+  "task_id": "gg10",
+  "prompt": "Write a Python function `flatten(nested)` that recursively flattens an arbitrarily nested list of integers into a single flat list, preserving order. Only lists are nested; all leaves are ints."
+ },
+ {
+  "task_id": "gg11",
+  "prompt": "Write a Python function `safe_divide(a, b)` that returns a / b, but returns None if b is 0 (instead of raising). Handle only the zero-division case."
+ },
+ {
+  "task_id": "gg12",
+  "prompt": "Write a Python function `two_sum(nums, target)` that returns a tuple of the two distinct indices (i, j) with i < j such that nums[i] + nums[j] == target. Assume exactly one solution exists. Use a hash map for O(n) time."
+ },
+ {
+  "task_id": "gc01",
+  "prompt": "A farmer has a dozen hens. Each hen lays half a dozen eggs every week. How many eggs does the farmer collect from all the hens in a single week? Answer with the total number."
+ },
+ {
+  "task_id": "gc02",
+  "prompt": "In the Morse code and telegraph era, which country's inventor is credited with developing the electric telegraph and the famous dot-dash alphabet used to debug transmission errors? Give the person's surname."
+ },
+ {
+  "task_id": "gc03",
+  "prompt": "Three friends finish a race. Tara finishes before Raj. Raj finishes before Meena. Nobody finishes at the same time. Tell me, in one word, who came in last."
+ },
+ {
+  "task_id": "gc04",
+  "prompt": "I just read a review of a new laptop that said: 'The build quality is atrocious, the battery drains within an hour, and support ignored my three emails.' Classify the overall sentiment of this technical review as positive, negative, or neutral."
+ },
+ {
+  "task_id": "gc05",
+  "prompt": "Read this short story and pull out the named entities. 'Priya flew from Mumbai to attend a strategy meeting at Infosys, where she signed a partnership with Wipro.' Return JSON with keys person, org, location listing the entities you found."
+ },
+ {
+  "task_id": "gc07",
+  "prompt": "Write a function named add_two that takes two integers and returns their sum. Use Python. Do not explain, just provide the code."
+ },
+ {
+  "task_id": "gc08",
+  "prompt": "Summarize the following passage in one sentence: 'The city council approved a new bicycle lane network spanning forty kilometers, funded by a green transport grant, aiming to cut car traffic and reduce emissions across the downtown core over the next two years.'"
+ },
+ {
+  "task_id": "gc10",
+  "prompt": "There is a widely used programming language whose name is also a large snake. Which language am I describing? Answer with just the language name."
+ },
+ {
+  "task_id": "gc11",
+  "prompt": "In a village, every person who tells the truth wears a blue hat, and every liar wears a red hat. You meet someone in a red hat who says 'I always tell the truth.' Is that statement true or false? Answer true or false."
+ },
+ {
+  "task_id": "gc12",
+  "prompt": "My teammate left this comment on our pull request: 'Honestly this refactor is a breath of fresh air, the code finally reads cleanly and the tests pass on the first try.' What is the sentiment of this code-review comment: positive, negative, or neutral?"
+ }
+]

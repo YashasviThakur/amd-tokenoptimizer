@@ -1,0 +1,5 @@
+# Optional — real semantic embeddings + exact token counts.
+# Without these, TokenOptimizer falls back to a hashed-bag embedding and a
+# char-based token estimate, so everything still runs.
+sentence-transformers>=2.7
+tiktoken>=0.7

@@ -1,0 +1,67 @@
+name: build-test-push
+
+# Builds the Track-1 agent image on a native linux/amd64 runner (matches the
+# judging VM), self-tests it inside the container, then pushes to GHCR.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: tokenoptimizer-agent
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lowercase owner for GHCR
+        run: echo "OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - name: Free some disk (model bake needs room)
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android || true
+          df -h | head -2
+
+      - name: Build image (linux/amd64)
+        run: |
+          docker build -f docker/agent.Dockerfile \
+            -t ghcr.io/${OWNER}/${IMAGE}:latest \
+            -t ghcr.io/${OWNER}/${IMAGE}:${{ github.sha }} .
+
+      - name: Self-test inside the container (offline, solver + contract)
+        run: |
+          docker run --rm --entrypoint python \
+            ghcr.io/${OWNER}/${IMAGE}:latest -m agent.main --selftest
+
+      - name: Local-path smoke (remote disabled -> exercises baked ollama model)
+        run: |
+          mkdir -p in out
+          cp docker/sample_input/tasks.json in/tasks.json
+          docker run --rm -e ALLOWED_MODELS= \
+            -e INPUT_PATH=/input/tasks.json -e OUTPUT_PATH=/output/results.json \
+            -v "$PWD/in:/input" -v "$PWD/out:/output" \
+            ghcr.io/${OWNER}/${IMAGE}:latest
+          python - <<'PY'
+          import json
+          d = json.load(open("out/results.json", encoding="utf-8"))
+          assert isinstance(d, list) and len(d) >= 1, d
+          assert all(isinstance(x.get("task_id"), str) and isinstance(x.get("answer"), str) for x in d), d
+          print("results.json OK:", len(d), "answers")
+          PY
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push image
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        run: |
+          docker push ghcr.io/${OWNER}/${IMAGE}:latest
+          docker push ghcr.io/${OWNER}/${IMAGE}:${{ github.sha }}
+          echo "Pushed ghcr.io/${OWNER}/${IMAGE}:latest"

@@ -1,0 +1,1280 @@
+{
+ "gf01": {
+  "category": "factual",
+  "check": {
+   "type": "contains",
+   "value": [
+    "au"
+   ]
+  },
+  "answer": "The chemical symbol for gold is Au.",
+  "wrong": "The chemical symbol for gold is Go."
+ },
+ "gf02": {
+  "category": "factual",
+  "check": {
+   "type": "number",
+   "value": 1969
+  },
+  "answer": "1969",
+  "wrong": "1972"
+ },
+ "gf03": {
+  "category": "factual",
+  "check": {
+   "type": "contains",
+   "value": "canberra"
+  },
+  "answer": "The capital of Australia is Canberra.",
+  "wrong": "The capital of Australia is Sydney."
+ },
+ "gf04": {
+  "category": "factual",
+  "check": {
+   "type": "number",
+   "value": 206
+  },
+  "answer": "There are 206 bones in the adult human body.",
+  "wrong": "There are 300 bones in the adult human body."
+ },
+ "gf05": {
+  "category": "factual",
+  "check": {
+   "type": "contains",
+   "value": "shakespeare"
+  },
+  "answer": "William Shakespeare wrote Romeo and Juliet.",
+  "wrong": "Christopher Marlowe wrote Romeo and Juliet."
+ },
+ "gf06": {
+  "category": "factual",
+  "check": {
+   "type": "contains",
+   "value": [
+    "299792",
+    "299,792"
+   ]
+  },
+  "answer": "The speed of light is approximately 299,792 kilometers per second.",
+  "wrong": "The speed of light is approximately 150,000 kilometers per second."
+ },
+ "gf07": {
+  "category": "factual",
+  "check": {
+   "type": "contains",
+   "value": "jupiter"
+  },
+  "answer": "Jupiter is the largest planet in our Solar System.",
+  "wrong": "Saturn is the largest planet in our Solar System."
+ },
+ "gf08": {
+  "category": "factual",
+  "check": {
+   "type": "contains",
+   "value": "celsius"
+  },
+  "answer": "It is 0 degrees on the Celsius scale.",
+  "wrong": "It is 0 degrees on the Fahrenheit scale."
+ },
+ "gf09": {
+  "category": "factual",
+  "check": {
+   "type": "number",
+   "value": 7
+  },
+  "answer": "A heptagon has 7 sides.",
+  "wrong": "A heptagon has 6 sides."
+ },
+ "gf10": {
+  "category": "factual",
+  "check": {
+   "type": "contains",
+   "value": "hydrogen"
+  },
+  "answer": "Hydrogen has the atomic number 1.",
+  "wrong": "Helium has the atomic number 1."
+ },
+ "gf11": {
+  "category": "factual",
+  "check": {
+   "type": "contains",
+   "value": "same"
+  },
+  "answer": "They weigh the same — both are one kilogram.",
+  "wrong": "The steel weighs more than the feathers."
+ },
+ "gf12": {
+  "category": "factual",
+  "check": {
+   "type": "contains",
+   "value": [
+    "ampere",
+    "amp"
+   ]
+  },
+  "answer": "The SI base unit of electric current is the ampere.",
+  "wrong": "The SI base unit of electric current is the volt."
+ },
+ "gm01": {
+  "category": "math",
+  "check": {
+   "type": "number",
+   "value": 60
+  },
+  "answer": "The sale price is $60.",
+  "wrong": "The sale price is $55."
+ },
+ "gm02": {
+  "category": "math",
+  "check": {
+   "type": "number",
+   "value": 80
+  },
+  "answer": "Its speed is 80 km/h.",
+  "wrong": "Its speed is 720 km/h."
+ },
+ "gm04": {
+  "category": "math",
+  "check": {
+   "type": "number",
+   "value": 36
+  },
+  "answer": "The final price is $36.",
+  "wrong": "The final price is $35."
+ },
+ "gm06": {
+  "category": "math",
+  "check": {
+   "type": "number",
+   "value": 32
+  },
+  "answer": "It needs 32 liters.",
+  "wrong": "It needs 48 liters."
+ },
+ "gm07": {
+  "category": "math",
+  "check": {
+   "type": "number",
+   "value": 50
+  },
+  "answer": "The original number was 50.",
+  "wrong": "The original number was 42."
+ },
+ "gm08": {
+  "category": "math",
+  "check": {
+   "type": "number",
+   "value": 198
+  },
+  "answer": "The final price is $198.",
+  "wrong": "The final price is $200."
+ },
+ "gm09": {
+  "category": "math",
+  "check": {
+   "type": "number",
+   "value": 4
+  },
+  "answer": "It would take 4 hours.",
+  "wrong": "It would take 9 hours."
+ },
+ "gm10": {
+  "category": "math",
+  "check": {
+   "type": "number",
+   "value": 5
+  },
+  "answer": "The ball costs 5 cents.",
+  "wrong": "The ball costs 10 cents."
+ },
+ "gm11": {
+  "category": "math",
+  "check": {
+   "type": "number",
+   "value": 20
+  },
+  "answer": "The average is 20.",
+  "wrong": "The average is 30."
+ },
+ "gm12": {
+  "category": "math",
+  "check": {
+   "type": "number",
+   "value": 25
+  },
+  "answer": "The profit is 25%.",
+  "wrong": "The profit is 20%."
+ },
+ "gs01": {
+  "category": "sentiment",
+  "check": {
+   "type": "label",
+   "value": "positive"
+  },
+  "answer": "positive",
+  "wrong": "negative"
+ },
+ "gs02": {
+  "category": "sentiment",
+  "check": {
+   "type": "label",
+   "value": "negative"
+  },
+  "answer": "negative",
+  "wrong": "positive"
+ },
+ "gs03": {
+  "category": "sentiment",
+  "check": {
+   "type": "label",
+   "value": "neutral"
+  },
+  "answer": "neutral",
+  "wrong": "positive"
+ },
+ "gs04": {
+  "category": "sentiment",
+  "check": {
+   "type": "label",
+   "value": "negative"
+  },
+  "answer": "negative",
+  "wrong": "positive"
+ },
+ "gs05": {
+  "category": "sentiment",
+  "check": {
+   "type": "label",
+   "value": "negative"
+  },
+  "answer": "negative",
+  "wrong": "positive"
+ },
+ "gs06": {
+  "category": "sentiment",
+  "check": {
+   "type": "label",
+   "value": "negative"
+  },
+  "answer": "negative",
+  "wrong": "positive"
+ },
+ "gs07": {
+  "category": "sentiment",
+  "check": {
+   "type": "label",
+   "value": "positive"
+  },
+  "answer": "positive",
+  "wrong": "negative"
+ },
+ "gs08": {
+  "category": "sentiment",
+  "check": {
+   "type": "label",
+   "value": "neutral"
+  },
+  "answer": "neutral",
+  "wrong": "negative"
+ },
+ "gs09": {
+  "category": "sentiment",
+  "check": {
+   "type": "label",
+   "value": "neutral"
+  },
+  "answer": "neutral",
+  "wrong": "positive"
+ },
+ "gs10": {
+  "category": "sentiment",
+  "check": {
+   "type": "label",
+   "value": "positive"
+  },
+  "answer": "positive",
+  "wrong": "neutral"
+ },
+ "gs11": {
+  "category": "sentiment",
+  "check": {
+   "type": "label",
+   "value": "positive"
+  },
+  "answer": "positive",
+  "wrong": "negative"
+ },
+ "gs12": {
+  "category": "sentiment",
+  "check": {
+   "type": "label",
+   "value": "negative"
+  },
+  "answer": "negative",
+  "wrong": "positive"
+ },
+ "gu01": {
+  "category": "summarization",
+  "check": {
+   "type": "keywords",
+   "value": {
+    "all": [
+     "bike"
+    ],
+    "any": [
+     "council",
+     "lane",
+     "congestion",
+     "emissions"
+    ]
+   }
+  },
+  "answer": "The city council approved a 40-mile downtown bike-lane network to cut congestion and emissions, with construction starting next spring despite concerns over lost parking.",
+  "wrong": "The weather downtown has been unusually warm this week."
+ },
+ "gu02": {
+  "category": "summarization",
+  "check": {
+   "type": "keywords",
+   "value": {
+    "all": [
+     "vaccine"
+    ],
+    "any": [
+     "disease",
+     "mosquito",
+     "trial"
+    ]
+   }
+  },
+  "answer": "Scientists developed a promising vaccine against a mosquito-borne disease in early trials.",
+  "wrong": "Scientists spent a decade doing research at a well-funded tropical institute studying many different mosquito-borne illnesses affecting large populations of people living in warm regions worldwide."
+ },
+ "gu04": {
+  "category": "summarization",
+  "check": {
+   "type": "keywords",
+   "value": {
+    "all": [
+     "flood"
+    ],
+    "any": [
+     "river",
+     "evacuat",
+     "rain",
+     "damage"
+    ]
+   }
+  },
+  "answer": "Weekend rains flooded the river and low-lying neighborhoods, forcing over 500 evacuations and causing damages that may top two million dollars.",
+  "wrong": "A drought left the river dangerously low over the weekend, prompting water restrictions across the region."
+ },
+ "gu05": {
+  "category": "summarization",
+  "check": {
+   "type": "keywords",
+   "value": {
+    "all": [
+     "cartographer"
+    ],
+    "any": [
+     "grandmother",
+     "spy",
+     "memory",
+     "identity"
+    ]
+   }
+  },
+  "answer": "A young cartographer mapping a remote coast discovers her grandmother was a wartime spy and confronts themes of identity, memory, and inherited silence.",
+  "wrong": "A retired sailor writes a memoir about his years navigating peaceful trade routes across the ocean."
+ },
+ "gu06": {
+  "category": "summarization",
+  "check": {
+   "type": "keywords",
+   "value": {
+    "all": [
+     "tax"
+    ],
+    "any": [
+     "reject",
+     "against",
+     "burden",
+     "little revenue",
+     "oppose"
+    ]
+   }
+  },
+  "answer": "The passage argues the council should reject the proposed school-funding tax because similar taxes raised little revenue and burdened small businesses without supporting evidence.",
+  "wrong": "The passage enthusiastically supports the new tax as a proven way to fund schools and help small businesses."
+ },
+ "gu07": {
+  "category": "summarization",
+  "check": {
+   "type": "keywords",
+   "value": {
+    "all": [
+     "moon"
+    ],
+    "any": [
+     "ocean",
+     "geyser",
+     "ice",
+     "life",
+     "plume"
+    ]
+   }
+  },
+  "answer": "The spacecraft's flyby imaged ice geysers on a distant moon, suggesting a subsurface ocean that might harbor microbial life.",
+  "wrong": "The spacecraft crashed into the moon before it could send back any usable images."
+ },
+ "gu08": {
+  "category": "summarization",
+  "check": {
+   "type": "keywords",
+   "value": {
+    "all": [
+     "workshop"
+    ],
+    "any": [
+     "resume",
+     "interview",
+     "salary",
+     "negotiat"
+    ]
+   }
+  },
+  "answer": "The workshop taught resume structuring, behavioral interview techniques, and salary negotiation, giving attendees a checklist for each job-search stage.",
+  "wrong": "The workshop focused entirely on how to write a cover letter and nothing else."
+ },
+ "gu09": {
+  "category": "summarization",
+  "check": {
+   "type": "keywords",
+   "value": {
+    "all": [
+     "airline"
+    ],
+    "any": [
+     "ground",
+     "fleet",
+     "software",
+     "stranded",
+     "strand"
+    ]
+   }
+  },
+  "answer": "The national airline grounded its entire fleet for 48 hours due to a booking-system software fault, stranding thousands of passengers.",
+  "wrong": "A local bakery won a regional award while the stock market closed slightly higher."
+ },
+ "gu10": {
+  "category": "summarization",
+  "check": {
+   "type": "keywords",
+   "value": {
+    "all": [
+     "exercise"
+    ],
+    "any": [
+     "consistency",
+     "health",
+     "sleep",
+     "anxiety",
+     "walk"
+    ]
+   }
+  },
+  "answer": "Regular exercise like brief daily walks improves heart health, sleep, and anxiety, with consistency mattering more than intensity.",
+  "wrong": "Researchers found that only intense, high-effort workouts provide any measurable health benefit."
+ },
+ "gu12": {
+  "category": "summarization",
+  "check": {
+   "type": "keywords",
+   "value": {
+    "all": [
+     "office"
+    ],
+    "any": [
+     "rebound",
+     "return",
+     "pre-pandemic",
+     "recover"
+    ]
+   }
+  },
+  "answer": "The latest report reverses earlier assumptions, showing office leasing has rebounded to near pre-pandemic levels as companies mandate returning to the office.",
+  "wrong": "Remote work has permanently shrunk demand for office space, as analysts long predicted."
+ },
+ "gn01": {
+  "category": "ner",
+  "check": {
+   "type": "json_entities",
+   "value": {
+    "person": [
+     "tim cook"
+    ],
+    "org": [
+     "apple"
+    ],
+    "location": [
+     "cupertino"
+    ],
+    "date": [
+     "september 12, 2023"
+    ]
+   }
+  },
+  "answer": "{\"person\": [\"Tim Cook\"], \"org\": [\"Apple\"], \"location\": [\"Cupertino\"], \"date\": [\"September 12, 2023\"]}",
+  "wrong": "{\"person\": [\"Tim Cook\"], \"org\": [\"iPhone\"], \"location\": [\"Apple\"], \"date\": []}"
+ },
+ "gn02": {
+  "category": "ner",
+  "check": {
+   "type": "json_entities",
+   "value": {
+    "person": [
+     "angela merkel"
+    ],
+    "org": [
+     "united nations"
+    ],
+    "location": [
+     "new york"
+    ],
+    "date": [
+     "march 3, 2015"
+    ]
+   }
+  },
+  "answer": "{\"person\": [\"Angela Merkel\"], \"org\": [\"United Nations\"], \"location\": [\"New York\"], \"date\": [\"March 3, 2015\"]}",
+  "wrong": "{\"person\": [\"Angela\"], \"org\": [], \"location\": [\"New York\"], \"date\": []}"
+ },
+ "gn03": {
+  "category": "ner",
+  "check": {
+   "type": "json_entities",
+   "value": {
+    "person": [
+     "serena williams"
+    ],
+    "org": [
+     "nike"
+    ],
+    "location": [
+     "paris"
+    ],
+    "date": [
+     "2010"
+    ]
+   }
+  },
+  "answer": "{\"person\": [\"Serena Williams\"], \"org\": [\"Nike\"], \"location\": [\"Paris\"], \"date\": [\"2010\"]}",
+  "wrong": "{\"person\": [\"Serena Williams\"], \"org\": [\"Nike\"], \"location\": [\"Nike\"], \"date\": [\"2011\"]}"
+ },
+ "gn06": {
+  "category": "ner",
+  "check": {
+   "type": "json_entities",
+   "value": {
+    "person": [
+     "dr. watson"
+    ],
+    "org": [
+     "scotland yard"
+    ],
+    "location": [
+     "london"
+    ],
+    "date": [
+     "christmas day 1895"
+    ]
+   }
+  },
+  "answer": "{\"person\": [\"Dr. Watson\"], \"org\": [\"Scotland Yard\"], \"location\": [\"London\"], \"date\": [\"Christmas Day 1895\"]}",
+  "wrong": "{\"person\": [\"Watson\"], \"org\": [\"Scotland Yard\"], \"location\": [\"London\"], \"date\": [\"1895\"]}"
+ },
+ "gn07": {
+  "category": "ner",
+  "check": {
+   "type": "json_entities",
+   "value": {
+    "org": [
+     "amazon"
+    ],
+    "location": [
+     "seattle"
+    ],
+    "date": [
+     "last tuesday"
+    ]
+   }
+  },
+  "answer": "{\"person\": [], \"org\": [\"Amazon\"], \"location\": [\"Seattle\"], \"date\": [\"last Tuesday\"]}",
+  "wrong": "{\"person\": [\"Amazon\"], \"org\": [], \"location\": [\"Seattle\"], \"date\": [\"Tuesday\"]}"
+ },
+ "gn08": {
+  "category": "ner",
+  "check": {
+   "type": "json_entities",
+   "value": {
+    "person": [
+     "washington"
+    ],
+    "location": [
+     "washington"
+    ],
+    "date": [
+     "the first of january"
+    ]
+   }
+  },
+  "answer": "{\"person\": [\"Washington\"], \"org\": [], \"location\": [\"Washington\"], \"date\": [\"the first of January\"]}",
+  "wrong": "{\"person\": [], \"org\": [\"Washington\"], \"location\": [\"Washington\"], \"date\": [\"January\"]}"
+ },
+ "gn10": {
+  "category": "ner",
+  "check": {
+   "type": "json_entities",
+   "value": {
+    "person": [
+     "jawaharlal nehru"
+    ],
+    "location": [
+     "red fort",
+     "delhi"
+    ],
+    "date": [
+     "15 august 1947"
+    ]
+   }
+  },
+  "answer": "{\"person\": [\"Jawaharlal Nehru\"], \"org\": [], \"location\": [\"Red Fort\", \"Delhi\"], \"date\": [\"15 August 1947\"]}",
+  "wrong": "{\"person\": [\"Nehru\"], \"org\": [\"Red Fort\"], \"location\": [\"Delhi\"], \"date\": [\"1947\"]}"
+ },
+ "gn11": {
+  "category": "ner",
+  "check": {
+   "type": "json_entities",
+   "value": {
+    "org": [
+     "netflix"
+    ],
+    "location": [
+     "los angeles"
+    ],
+    "date": [
+     "yesterday"
+    ]
+   }
+  },
+  "answer": "{\"person\": [], \"org\": [\"Netflix\"], \"location\": [\"Los Angeles\"], \"date\": [\"yesterday\"]}",
+  "wrong": "{\"person\": [], \"org\": [\"Netflix\", \"studio\"], \"location\": [\"Los Angeles\"], \"date\": []}"
+ },
+ "gn12": {
+  "category": "ner",
+  "check": {
+   "type": "json_entities",
+   "value": {
+    "person": [
+     "gerald ford"
+    ],
+    "org": [
+     "toyota"
+    ],
+    "location": [
+     "detroit"
+    ],
+    "date": [
+     "november 20th, 1975"
+    ]
+   }
+  },
+  "answer": "{\"person\": [\"Gerald Ford\"], \"org\": [\"Toyota\"], \"location\": [\"Detroit\"], \"date\": [\"November 20th, 1975\"]}",
+  "wrong": "{\"person\": [], \"org\": [\"Ford\", \"Toyota\"], \"location\": [\"Detroit\"], \"date\": [\"1975\"]}"
+ },
+ "gd01": {
+  "category": "code_debug",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "s = 0",
+     "for n in nums",
+     "return s"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def total(nums):\n    s = 0\n    for n in nums:\n        s += n\n    return s",
+  "wrong": "def total(nums):\n    s = nums[0]\n    for n in nums[1:]:\n        s += n\n    return s + nums[0]"
+ },
+ "gd02": {
+  "category": "code_debug",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "s[::-1]",
+     "s.lower()"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def is_palindrome(s):\n    s = s.lower()\n    return s == s[::-1]",
+  "wrong": "def is_palindrome(s):\n    s = s.lower()\n    return s == reversed(s)"
+ },
+ "gd03": {
+  "category": "code_debug",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "return 1",
+     "factorial(n - 1)"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def factorial(n):\n    if n == 0:\n        return 1\n    return n * factorial(n - 1)",
+  "wrong": "def factorial(n):\n    if n == 1:\n        return 0\n    return n * factorial(n - 1)"
+ },
+ "gd04": {
+  "category": "code_debug",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "aeiou",
+     "s.lower()"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def count_vowels(s):\n    vowels = 'aeiou'\n    return sum(1 for c in s.lower() if c in vowels)",
+  "wrong": "def count_vowels(s):\n    vowels = 'aeiou'\n    return sum(1 for c in s if c in vowels)"
+ },
+ "gd05": {
+  "category": "code_debug",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "bucket=None",
+     "is None",
+     "bucket = []"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def add_item(item, bucket=None):\n    if bucket is None:\n        bucket = []\n    bucket.append(item)\n    return bucket",
+  "wrong": "def add_item(item, bucket=[]):\n    bucket = bucket.copy()\n    bucket.append(item)\n    return bucket"
+ },
+ "gd06": {
+  "category": "code_debug",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "m = nums[0]",
+     "if n > m"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def my_max(nums):\n    m = nums[0]\n    for n in nums:\n        if n > m:\n            m = n\n    return m",
+  "wrong": "def my_max(nums):\n    m = 0\n    for n in nums:\n        if n > m:\n            m = n\n    return m or nums[0]"
+ },
+ "gd07": {
+  "category": "code_debug",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "count = 0",
+     "count += 1",
+     "return count"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def count_occurrences(lst, target):\n    count = 0\n    for x in lst:\n        if x == target:\n            count += 1\n    return count",
+  "wrong": "def count_occurrences(lst, target):\n    for x in lst:\n        if x == target:\n            return 1\n    return 0"
+ },
+ "gd08": {
+  "category": "code_debug",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "if b == 0",
+     "return None",
+     "a / b"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def safe_divide(a, b):\n    if b == 0:\n        return None\n    return a / b",
+  "wrong": "def safe_divide(a, b):\n    if b == 0:\n        return 0\n    return a / b"
+ },
+ "gd09": {
+  "category": "code_debug",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "seen = set()",
+     "if x not in seen",
+     "result.append(x)"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def dedupe(items):\n    seen = set()\n    result = []\n    for x in items:\n        if x not in seen:\n            seen.add(x)\n            result.append(x)\n    return result",
+  "wrong": "def dedupe(items):\n    return sorted(set(items))"
+ },
+ "gd10": {
+  "category": "code_debug",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "seq[:n]",
+     "seq[-1] + seq[-2]"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def fib(n):\n    seq = [0, 1]\n    while len(seq) < n:\n        seq.append(seq[-1] + seq[-2])\n    return seq[:n]",
+  "wrong": "def fib(n):\n    seq = [0, 1]\n    while len(seq) <= n:\n        seq.append(seq[-1] + seq[-2])\n    return seq"
+ },
+ "gd11": {
+  "category": "code_debug",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "lambda i=i: i"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def make_funcs():\n    funcs = []\n    for i in range(3):\n        funcs.append(lambda i=i: i)\n    return funcs",
+  "wrong": "def make_funcs():\n    funcs = []\n    for i in range(3):\n        funcs.append(lambda: i)\n    return funcs"
+ },
+ "gd12": {
+  "category": "code_debug",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "if not nums",
+     "return 0",
+     "sum(nums) / len(nums)"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def average(nums):\n    if not nums:\n        return 0\n    return sum(nums) / len(nums)",
+  "wrong": "def average(nums):\n    return sum(nums) / len(nums)"
+ },
+ "gl01": {
+  "category": "logic",
+  "check": {
+   "type": "contains",
+   "value": [
+    "carl"
+   ]
+  },
+  "answer": "Carl is the shortest.",
+  "wrong": "Anna is the shortest."
+ },
+ "gl02": {
+  "category": "logic",
+  "check": {
+   "type": "contains",
+   "value": [
+    "maya"
+   ]
+  },
+  "answer": "Maya won the race.",
+  "wrong": "Nina won the race."
+ },
+ "gl03": {
+  "category": "logic",
+  "check": {
+   "type": "contains",
+   "value": [
+    "yes"
+   ]
+  },
+  "answer": "Yes, all roses need water.",
+  "wrong": "No, roses do not need water."
+ },
+ "gl04": {
+  "category": "logic",
+  "check": {
+   "type": "number",
+   "value": 3
+  },
+  "answer": "3 people scored higher than Sam (Tom, Priya, and Raj).",
+  "wrong": "Only 1 person scored higher than Sam."
+ },
+ "gl05": {
+  "category": "logic",
+  "check": {
+   "type": "contains",
+   "value": [
+    "no"
+   ]
+  },
+  "answer": "No, it does not follow, since only some cats are black.",
+  "wrong": "Yes, all cats absorb heat."
+ },
+ "gl06": {
+  "category": "logic",
+  "check": {
+   "type": "contains",
+   "value": [
+    "box d",
+    "d is"
+   ]
+  },
+  "answer": "Box D is the heaviest.",
+  "wrong": "Box A is the heaviest."
+ },
+ "gl07": {
+  "category": "logic",
+  "check": {
+   "type": "contains",
+   "value": [
+    "monday"
+   ]
+  },
+  "answer": "Today is Monday.",
+  "wrong": "Today is Tuesday."
+ },
+ "gl08": {
+  "category": "logic",
+  "check": {
+   "type": "contains",
+   "value": [
+    "emma"
+   ]
+  },
+  "answer": "Emma sits in the middle.",
+  "wrong": "Frank sits in the middle."
+ },
+ "gl09": {
+  "category": "logic",
+  "check": {
+   "type": "contains",
+   "value": [
+    "yes"
+   ]
+  },
+  "answer": "Yes, some pets cannot fly.",
+  "wrong": "No, we cannot conclude that."
+ },
+ "gl10": {
+  "category": "logic",
+  "check": {
+   "type": "contains",
+   "value": [
+    "second oldest is a",
+    "a is the second"
+   ]
+  },
+  "answer": "Order oldest to youngest: C, A, B, D. The second oldest is A.",
+  "wrong": "The second oldest is C."
+ },
+ "gl11": {
+  "category": "logic",
+  "check": {
+   "type": "contains",
+   "value": [
+    "no"
+   ]
+  },
+  "answer": "No, it does not necessarily follow; not all rectangles are squares.",
+  "wrong": "Yes, it must be a square."
+ },
+ "gl12": {
+  "category": "logic",
+  "check": {
+   "type": "number",
+   "value": 3
+  },
+  "answer": "3 runners finish ahead of Kai, since the middle of seven is 4th place.",
+  "wrong": "4 runners finish ahead of Kai."
+ },
+ "gg03": {
+  "category": "code_gen",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "def reverse_string",
+     "[::-1]"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def reverse_string(s):\n    return s[::-1]",
+  "wrong": "def reverse_string(s):\n    return s"
+ },
+ "gg04": {
+  "category": "code_gen",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "def count_vowels",
+     "aeiou"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def count_vowels(s):\n    return sum(1 for c in s.lower() if c in 'aeiou')",
+  "wrong": "def count_vowels(s):\n    return len(s)"
+ },
+ "gg05": {
+  "category": "code_gen",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "def fizzbuzz",
+     "FizzBuzz",
+     "Fizz",
+     "Buzz"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def fizzbuzz(n):\n    if n % 15 == 0:\n        return 'FizzBuzz'\n    if n % 3 == 0:\n        return 'Fizz'\n    if n % 5 == 0:\n        return 'Buzz'\n    return str(n)",
+  "wrong": "def fizzbuzz(n):\n    if n % 3 == 0:\n        return 'Fizz'\n    if n % 5 == 0:\n        return 'Buzz'\n    return str(n)"
+ },
+ "gg06": {
+  "category": "code_gen",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "def is_palindrome",
+     "isalnum",
+     "[::-1]"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def is_palindrome(s):\n    cleaned = ''.join(c.lower() for c in s if c.isalnum())\n    return cleaned == cleaned[::-1]",
+  "wrong": "def is_palindrome(s):\n    return s == s[::-1]"
+ },
+ "gg08": {
+  "category": "code_gen",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "def merge_dicts",
+     "**a",
+     "**b"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def merge_dicts(a, b):\n    return {**a, **b}",
+  "wrong": "def merge_dicts(a, b):\n    a.update(b)\n    return a"
+ },
+ "gg09": {
+  "category": "code_gen",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "def chunk",
+     "range(0, len(lst), size)"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def chunk(lst, size):\n    return [lst[i:i + size] for i in range(0, len(lst), size)]",
+  "wrong": "def chunk(lst, size):\n    return [lst[i:i + size] for i in range(0, len(lst))]"
+ },
+ "gg10": {
+  "category": "code_gen",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "def flatten",
+     "isinstance",
+     "list"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def flatten(nested):\n    result = []\n    for item in nested:\n        if isinstance(item, list):\n            result.extend(flatten(item))\n        else:\n            result.append(item)\n    return result",
+  "wrong": "def flatten(nested):\n    result = []\n    for item in nested:\n        result.append(item)\n    return result"
+ },
+ "gg11": {
+  "category": "code_gen",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "def safe_divide",
+     "return None"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def safe_divide(a, b):\n    if b == 0:\n        return None\n    return a / b",
+  "wrong": "def safe_divide(a, b):\n    return a / b"
+ },
+ "gg12": {
+  "category": "code_gen",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "def two_sum",
+     "seen",
+     "enumerate"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def two_sum(nums, target):\n    seen = {}\n    for i, x in enumerate(nums):\n        if target - x in seen:\n            return (seen[target - x], i)\n        seen[x] = i",
+  "wrong": "def two_sum(nums, target):\n    for i in range(len(nums)):\n        for j in range(len(nums)):\n            if nums[i] + nums[j] == target:\n                return (i, j)"
+ },
+ "gc01": {
+  "category": "factual",
+  "check": {
+   "type": "number",
+   "value": 72
+  },
+  "answer": "A dozen hens is twelve hens, and each lays six eggs, so twelve times six equals 72 eggs per week.",
+  "wrong": "The hens lay plenty of eggs, roughly a basketful, enough for a big family breakfast every morning."
+ },
+ "gc02": {
+  "category": "code_debug",
+  "check": {
+   "type": "contains",
+   "value": [
+    "morse"
+   ]
+  },
+  "answer": "The electric telegraph and the dot-dash alphabet are credited to Samuel Morse, so the surname is Morse.",
+  "wrong": "That signaling system was developed by Alexander Graham Bell, who is best known for the telephone."
+ },
+ "gc03": {
+  "category": "logic",
+  "check": {
+   "type": "contains",
+   "value": [
+    "meena"
+   ]
+  },
+  "answer": "Since Tara beats Raj and Raj beats Meena, the order is Tara, Raj, Meena, so Meena came last.",
+  "wrong": "Because Raj was in the middle of the pack the whole time, Raj is clearly the one who came in last."
+ },
+ "gc04": {
+  "category": "sentiment",
+  "check": {
+   "type": "contains",
+   "value": [
+    "negative"
+   ]
+  },
+  "answer": "The reviewer complains about atrocious build, poor battery, and ignored support, so the sentiment is negative.",
+  "wrong": "This is a balanced, purely informational spec description, so the sentiment is neutral."
+ },
+ "gc05": {
+  "category": "ner",
+  "check": {
+   "type": "json_entities",
+   "value": {
+    "person": [
+     "priya"
+    ],
+    "org": [
+     "infosys",
+     "wipro"
+    ],
+    "location": [
+     "mumbai"
+    ]
+   }
+  },
+  "answer": "{\"person\":[\"priya\"],\"org\":[\"infosys\",\"wipro\"],\"location\":[\"mumbai\"]}",
+  "wrong": "The story is about a business trip and a partnership deal between two large technology consulting companies."
+ },
+ "gc07": {
+  "category": "code_gen",
+  "check": {
+   "type": "code",
+   "value": {
+    "must_contain": [
+     "def add_two",
+     "return"
+    ],
+    "compiles": true
+   }
+  },
+  "answer": "def add_two(a, b):\n    return a + b",
+  "wrong": "To add two numbers you just combine them together and you get the total of both values added up."
+ },
+ "gc08": {
+  "category": "summarization",
+  "check": {
+   "type": "keywords",
+   "value": {
+    "all": [
+     "bicycle"
+    ],
+    "any": [
+     "council",
+     "emissions",
+     "traffic"
+    ]
+   }
+  },
+  "answer": "The city council approved a grant-funded forty-kilometer bicycle lane network to reduce downtown car traffic and emissions over two years.",
+  "wrong": "Bicycles are a healthy and eco-friendly way to travel, and many people enjoy cycling to work each day."
+ },
+ "gc10": {
+  "category": "factual",
+  "check": {
+   "type": "contains",
+   "value": [
+    "python"
+   ]
+  },
+  "answer": "The language named after a snake is Python.",
+  "wrong": "The language you are describing is Java, which is extremely popular for enterprise applications."
+ },
+ "gc11": {
+  "category": "factual",
+  "check": {
+   "type": "contains",
+   "value": [
+    "false"
+   ]
+  },
+  "answer": "A red hat marks a liar, so the person's claim of always telling the truth is false.",
+  "wrong": "Since the person confidently asserts they tell the truth, the statement is true."
+ },
+ "gc12": {
+  "category": "sentiment",
+  "check": {
+   "type": "contains",
+   "value": [
+    "positive"
+   ]
+  },
+  "answer": "The reviewer praises the refactor as a breath of fresh air with clean code and passing tests, so the sentiment is positive.",
+  "wrong": "This is just a factual note about a refactor and passing tests, so the sentiment is neutral."
+ }
+}

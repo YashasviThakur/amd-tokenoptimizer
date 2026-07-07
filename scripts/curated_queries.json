@@ -1,0 +1,37 @@
+{
+  "demo": [
+    {"query": "hi there, how are you?", "expect": "local"},
+    {"query": "what is the capital of France?", "expect": "local"},
+    {"query": "what's the capital of France?", "expect": "cache"},
+    {"query": "Design an algorithm to detect a cycle in a directed graph, prove its time complexity step by step, and give the code.", "expect": "remote"}
+  ],
+  "benchmark": [
+    {"query": "hi", "expect": "local"},
+    {"query": "hello!", "expect": "local"},
+    {"query": "thanks", "expect": "local"},
+    {"query": "what is the capital of Japan?", "expect": "local"},
+    {"query": "what's the capital of Japan?", "expect": "cache"},
+    {"query": "who wrote Hamlet?", "expect": "local"},
+    {"query": "define photosynthesis", "expect": "local"},
+    {"query": "convert 10 km to miles", "expect": "local"},
+    {"query": "what time is it in Tokyo?", "expect": "local"},
+    {"query": "how many days in a leap year?", "expect": "local"},
+    {"query": "spell 'necessary'", "expect": "local"},
+    {"query": "who is the CEO of AMD?", "expect": "local"},
+    {"query": "what is 2 + 2?", "expect": "local"},
+    {"query": "how are you doing today?", "expect": "local"},
+    {"query": "define recursion in one line", "expect": "local"},
+    {"query": "Prove that the square root of 2 is irrational, step by step.", "expect": "remote"},
+    {"query": "Design a rate limiter for a distributed API and analyze the trade-offs.", "expect": "remote"},
+    {"query": "Refactor this Python function to be O(n) and explain why: def f(a): return [x for x in a if a.count(x) > 1]", "expect": "remote"},
+    {"query": "Write SQL to find the second highest salary per department and explain the window function.", "expect": "remote"},
+    {"query": "Compare Raft and Paxos consensus algorithms and when to use each.", "expect": "remote"},
+    {"query": "Derive the gradient of the softmax cross-entropy loss.", "expect": "remote"},
+    {"query": "Implement a debounce function in JavaScript and explain the closure.", "expect": "remote"},
+    {"query": "Analyze the time and space complexity of merge sort with a proof.", "expect": "remote"},
+    {"query": "Design a caching strategy for an LLM gateway and justify eviction policy.", "expect": "remote"},
+    {"query": "what's the capital of Japan?", "expect": "cache"},
+    {"query": "hi", "expect": "cache"},
+    {"query": "who is the CEO of AMD?", "expect": "cache"}
+  ]
+}

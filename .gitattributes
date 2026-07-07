@@ -1,0 +1,5 @@
+# Force LF everywhere so shell scripts / Dockerfiles work in the linux container.
+* text=auto eol=lf
+*.sh text eol=lf
+*.Dockerfile text eol=lf
+Dockerfile text eol=lf

@@ -1,0 +1,6 @@
+[
+  {"task_id": "s1", "prompt": "What is 12 * 12?"},
+  {"task_id": "s2", "prompt": "Alice is taller than Bob. Bob is taller than Carol. Who is the shortest?"},
+  {"task_id": "s3", "prompt": "What is the capital of France?"},
+  {"task_id": "s4", "prompt": "Classify the sentiment: I love this product."}
+]

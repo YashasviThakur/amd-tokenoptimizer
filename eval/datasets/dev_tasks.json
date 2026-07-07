@@ -1,0 +1,41 @@
+[
+  {"task_id": "f1", "prompt": "What is the boiling point of water at sea level, in degrees Celsius?"},
+  {"task_id": "f2", "prompt": "What is the chemical symbol for gold?"},
+  {"task_id": "f3", "prompt": "Who wrote the play Romeo and Juliet?"},
+  {"task_id": "f4", "prompt": "What planet is known as the Red Planet?"},
+
+  {"task_id": "m1", "prompt": "What is 47 * 23?"},
+  {"task_id": "m2", "prompt": "What is 15% of 240?"},
+  {"task_id": "m3", "prompt": "A jacket costs $80 and is discounted by 25%. What is the sale price in dollars?"},
+  {"task_id": "m4", "prompt": "If a train travels 300 km in 4 hours, what is its average speed in km per hour?"},
+
+  {"task_id": "s1", "prompt": "Classify the sentiment of this review: 'Absolutely love it, best purchase I have made all year!'"},
+  {"task_id": "s2", "prompt": "Classify the sentiment of this review: 'The product broke after one day and support ignored me.'"},
+  {"task_id": "s3", "prompt": "Classify the sentiment: 'The package arrived on Tuesday afternoon.'"},
+  {"task_id": "s4", "prompt": "Classify the sentiment: 'I am thrilled with how well this works.'"},
+
+  {"task_id": "u1", "prompt": "Summarise the following in one sentence: 'The Great Barrier Reef, off the coast of Australia, is the world's largest coral reef system, home to thousands of marine species, and is increasingly threatened by rising ocean temperatures.'"},
+  {"task_id": "u2", "prompt": "Summarise the following in one sentence: 'Python is a high-level programming language known for readable syntax and a large ecosystem of libraries, widely used in data science, web development, and automation.'"},
+  {"task_id": "u3", "prompt": "Summarise the following in one sentence: 'The 2016 Summer Olympic Games were held in Rio de Janeiro, Brazil, marking the first time the event took place in South America.'"},
+  {"task_id": "u4", "prompt": "Summarise the following in one sentence: 'Photosynthesis is the process by which green plants use sunlight to convert carbon dioxide and water into glucose and oxygen.'"},
+
+  {"task_id": "n1", "prompt": "Extract named entities as JSON with keys person, org, location, date: 'Tim Cook announced the new iPhone at Apple Park in Cupertino on September 12, 2023.'"},
+  {"task_id": "n2", "prompt": "Extract named entities as JSON with keys person, org, location, date: 'Elon Musk visited the Tesla factory in Berlin on March 22, 2022.'"},
+  {"task_id": "n3", "prompt": "Extract named entities as JSON with keys person, org, location, date: 'Serena Williams announced her retirement, reported by the WTA in New York in August 2022.'"},
+  {"task_id": "n4", "prompt": "Extract named entities as JSON with keys person, org, location, date: 'Satya Nadella spoke at Microsoft Ignite in Seattle on October 12, 2021.'"},
+
+  {"task_id": "d1", "prompt": "Fix the bug in this Python function so it returns the sum of a and b:\n\ndef add(a, b):\n    return a - b"},
+  {"task_id": "d2", "prompt": "Fix the bug in this Python function that should return the maximum value of a non-empty list:\n\ndef maximum(xs):\n    m = 0\n    for x in xs:\n        if x > m:\n            m = x\n    return m"},
+  {"task_id": "d3", "prompt": "Fix the bug in this function meant to check if a number is even:\n\ndef is_even(n):\n    return n % 2 == 1"},
+  {"task_id": "d4", "prompt": "This Python code raises a syntax error. Fix it:\n\ndef greet(name)\n    return 'hi ' + name"},
+
+  {"task_id": "l1", "prompt": "Alice is taller than Bob. Bob is taller than Carol. Who is the shortest?"},
+  {"task_id": "l2", "prompt": "If all Bloops are Razzies and all Razzies are Lazzies, are all Bloops definitely Lazzies? Answer yes or no."},
+  {"task_id": "l3", "prompt": "Tom is older than Sara. Sara is older than Mike. Mike is older than Jane. Who is the oldest?"},
+  {"task_id": "l4", "prompt": "Three friends finish a race. Dan finishes before Eve. Eve finishes before Finn. Who finishes last?"},
+
+  {"task_id": "g1", "prompt": "Write a Python function is_palindrome(s) that returns True if the string s is a palindrome, ignoring case."},
+  {"task_id": "g2", "prompt": "Write a Python function factorial(n) that returns n factorial using a loop."},
+  {"task_id": "g3", "prompt": "Write a Python function count_vowels(s) that returns the number of vowels in the string s."},
+  {"task_id": "g4", "prompt": "Write a Python function fizzbuzz(n) that returns 'FizzBuzz' if n is divisible by 15, 'Fizz' if divisible by 3, 'Buzz' if divisible by 5, otherwise the number as a string."}
+]

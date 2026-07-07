@@ -1,0 +1,41 @@
+{
+  "f1": {"category": "factual", "check": {"type": "number", "value": 100}, "answer": "100", "wrong": "212"},
+  "f2": {"category": "factual", "check": {"type": "exact", "value": "au"}, "answer": "Au", "wrong": "Gd"},
+  "f3": {"category": "factual", "check": {"type": "contains", "value": "shakespeare"}, "answer": "William Shakespeare", "wrong": "Christopher Marlowe"},
+  "f4": {"category": "factual", "check": {"type": "contains", "value": "mars"}, "answer": "Mars", "wrong": "Jupiter"},
+
+  "m1": {"category": "math", "check": {"type": "number", "value": 1081}, "answer": "1081", "wrong": "1071"},
+  "m2": {"category": "math", "check": {"type": "number", "value": 36}, "answer": "36", "wrong": "45"},
+  "m3": {"category": "math", "check": {"type": "number", "value": 60}, "answer": "60", "wrong": "55"},
+  "m4": {"category": "math", "check": {"type": "number", "value": 75}, "answer": "75", "wrong": "80"},
+
+  "s1": {"category": "sentiment", "check": {"type": "label", "value": "positive"}, "answer": "positive", "wrong": "neutral"},
+  "s2": {"category": "sentiment", "check": {"type": "label", "value": "negative"}, "answer": "negative", "wrong": "positive"},
+  "s3": {"category": "sentiment", "check": {"type": "label", "value": "neutral"}, "answer": "neutral", "wrong": "positive"},
+  "s4": {"category": "sentiment", "check": {"type": "label", "value": "positive"}, "answer": "positive", "wrong": "negative"},
+
+  "u1": {"category": "summarization", "check": {"type": "keywords", "value": {"all": ["reef"], "any": ["australia", "coral", "temperature", "largest"]}}, "answer": "The Great Barrier Reef off Australia is the world's largest coral reef system and is threatened by rising ocean temperatures.", "wrong": "This passage talks about the ocean and some animals."},
+  "u2": {"category": "summarization", "check": {"type": "keywords", "value": {"all": ["python"], "any": ["language", "data", "web", "libraries", "automation"]}}, "answer": "Python is a readable high-level programming language widely used in data science, web development, and automation.", "wrong": "It is about a kind of snake in the wild."},
+  "u3": {"category": "summarization", "check": {"type": "keywords", "value": {"all": ["rio"], "any": ["2016", "brazil", "olympic", "south america"]}}, "answer": "The 2016 Summer Olympics were held in Rio de Janeiro, Brazil, the first Games in South America.", "wrong": "Some sporting events happened in a city."},
+  "u4": {"category": "summarization", "check": {"type": "keywords", "value": {"all": ["photosynthesis"], "any": ["sunlight", "glucose", "oxygen", "plants", "carbon"]}}, "answer": "Photosynthesis is how green plants use sunlight to turn carbon dioxide and water into glucose and oxygen.", "wrong": "Plants are green and they grow outside."},
+
+  "n1": {"category": "ner", "check": {"type": "json_entities", "value": {"person": ["tim cook"], "org": ["apple"], "location": ["cupertino"]}}, "answer": "{\"person\":[\"Tim Cook\"],\"org\":[\"Apple\"],\"location\":[\"Cupertino\"],\"date\":[\"September 12, 2023\"]}", "wrong": "{}"},
+  "n2": {"category": "ner", "check": {"type": "json_entities", "value": {"person": ["elon musk"], "org": ["tesla"], "location": ["berlin"]}}, "answer": "{\"person\":[\"Elon Musk\"],\"org\":[\"Tesla\"],\"location\":[\"Berlin\"],\"date\":[\"March 22, 2022\"]}", "wrong": "{}"},
+  "n3": {"category": "ner", "check": {"type": "json_entities", "value": {"person": ["serena williams"], "org": ["wta"], "location": ["new york"]}}, "answer": "{\"person\":[\"Serena Williams\"],\"org\":[\"WTA\"],\"location\":[\"New York\"],\"date\":[\"August 2022\"]}", "wrong": "{}"},
+  "n4": {"category": "ner", "check": {"type": "json_entities", "value": {"person": ["satya nadella"], "org": ["microsoft"], "location": ["seattle"]}}, "answer": "{\"person\":[\"Satya Nadella\"],\"org\":[\"Microsoft\"],\"location\":[\"Seattle\"],\"date\":[\"October 12, 2021\"]}", "wrong": "{}"},
+
+  "d1": {"category": "code_debug", "check": {"type": "code", "value": {"must_contain": ["a + b"], "compiles": true}}, "answer": "def add(a, b):\n    return a + b", "wrong": "def add(a, b):\n    return a - b"},
+  "d2": {"category": "code_debug", "check": {"type": "code", "value": {"must_contain": ["xs[0]"], "compiles": true}}, "answer": "def maximum(xs):\n    m = xs[0]\n    for x in xs:\n        if x > m:\n            m = x\n    return m", "wrong": "def maximum(xs):\n    m = 0\n    for x in xs:\n        if x > m:\n            m = x\n    return m"},
+  "d3": {"category": "code_debug", "check": {"type": "code", "value": {"must_contain": ["% 2 == 0"], "compiles": true}}, "answer": "def is_even(n):\n    return n % 2 == 0", "wrong": "def is_even(n):\n    return n % 2 == 1"},
+  "d4": {"category": "code_debug", "check": {"type": "code", "value": {"must_contain": ["def greet(name):"], "compiles": true}}, "answer": "def greet(name):\n    return 'hi ' + name", "wrong": "def greet(name)\n    return 'hi ' + name"},
+
+  "l1": {"category": "logic", "check": {"type": "contains", "value": "carol"}, "answer": "Carol", "wrong": "Alice"},
+  "l2": {"category": "logic", "check": {"type": "contains", "value": "yes"}, "answer": "Yes", "wrong": "No"},
+  "l3": {"category": "logic", "check": {"type": "contains", "value": "tom"}, "answer": "Tom", "wrong": "Jane"},
+  "l4": {"category": "logic", "check": {"type": "contains", "value": "finn"}, "answer": "Finn", "wrong": "Dan"},
+
+  "g1": {"category": "code_gen", "check": {"type": "code", "value": {"must_contain": ["def is_palindrome", "[::-1]"], "compiles": true}}, "answer": "def is_palindrome(s):\n    s = s.lower()\n    return s == s[::-1]", "wrong": "def is_palindrome(s)\n    return s"},
+  "g2": {"category": "code_gen", "check": {"type": "code", "value": {"must_contain": ["def factorial"], "compiles": true}}, "answer": "def factorial(n):\n    r = 1\n    for i in range(2, n + 1):\n        r *= i\n    return r", "wrong": "def factorial(n):\n    return"},
+  "g3": {"category": "code_gen", "check": {"type": "code", "value": {"must_contain": ["def count_vowels"], "compiles": true}}, "answer": "def count_vowels(s):\n    return sum(1 for c in s.lower() if c in 'aeiou')", "wrong": "def count_vowels(s)\n    return 0"},
+  "g4": {"category": "code_gen", "check": {"type": "code", "value": {"must_contain": ["def fizzbuzz", "FizzBuzz"], "compiles": true}}, "answer": "def fizzbuzz(n):\n    if n % 15 == 0:\n        return 'FizzBuzz'\n    if n % 3 == 0:\n        return 'Fizz'\n    if n % 5 == 0:\n        return 'Buzz'\n    return str(n)", "wrong": "def fizzbuzz(n):\n    return n"}
+}
