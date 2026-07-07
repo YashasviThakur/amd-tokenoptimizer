@@ -15,7 +15,10 @@ import re
 
 from .verifiers import try_arithmetic  # pure expression + "x% of y"
 
-_NAME = r"[A-Z][a-z]+"
+# A name is a capitalized word, optionally with a single standalone label letter
+# ("Box A", "Team B"). The \b after the letter stops it swallowing the next word
+# (so "Bob And Carol" never captures "Bob A").
+_NAME = r"[A-Z][a-z]+(?:\s[A-Z]\b)?"
 _GT = {"taller", "older", "faster", "bigger", "larger", "heavier", "stronger",
        "richer", "wealthier", "longer"}
 _LT = {"shorter", "younger", "slower", "smaller", "lighter", "weaker", "poorer"}
@@ -33,7 +36,8 @@ _ATTRS = [
     {"max": {"strongest"}, "min": {"weakest"}, "gt": {"stronger"}, "lt": {"weaker"}},
     {"max": {"richest", "wealthiest"}, "min": {"poorest"}, "gt": {"richer", "wealthier"}, "lt": {"poorer"}},
     {"max": {"longest"}, "min": {"shortest"}, "gt": {"longer"}, "lt": {"shorter"}},
-    {"race": True, "max": {"first"}, "min": {"last"}, "gt": set(), "lt": set()},
+    {"race": True, "max": {"first", "won", "win", "wins", "winner"},
+     "min": {"last", "lost"}, "gt": set(), "lt": set()},
 ]
 
 
@@ -55,8 +59,11 @@ def _reach(adj, n):
 
 def solve_ordering(prompt: str) -> str | None:
     """Comparative chains → who is the X-est. Proves a unique total order or None."""
-    # 1) intent from the question clause only (whole words), pick the dimension
-    qm = re.search(r"who\b([^?]*)\?", prompt.lower())
+    # 1) intent from the question clause only (whole words), pick the dimension.
+    # Accepts "who ..." and "which ...", ending at ? . or ! (many puzzles use
+    # statement form: "Tell me who came in last."). Misfires are still fenced off
+    # by the >=2-edge + unique-total-order requirement below.
+    qm = re.search(r"\b(?:who|which)\b([^?.!\n]*)", prompt.lower())
     if not qm:
         return None
     qwords = set(re.findall(r"[a-z]+", qm.group(1)))
@@ -82,8 +89,12 @@ def solve_ordering(prompt: str) -> str | None:
         elif c in _GT or c in _LT:
             return None  # mixed dimension
     if attr.get("race"):
-        for a, rel, b in re.findall(rf"({_NAME})\s+finishes\s+(before|after)\s+({_NAME})", prompt):
-            edges.append((a, b) if rel == "before" else (b, a))
+        # "X finishes before Y", "X finished ahead of Y", "X came behind Y", …
+        for a, rel, b in re.findall(
+                rf"({_NAME})\s+(?:is|was|finish\w*|came|placed|ended up|ends up)\s+"
+                rf"(before|after|ahead of|behind)\s+({_NAME})", prompt):
+            higher = rel in ("before", "ahead of")  # earlier finish = higher rank
+            edges.append((a, b) if higher else (b, a))
     if len(edges) < 2:
         return None
 
@@ -184,6 +195,29 @@ def solve_math_word(prompt: str) -> str | None:
                       r"(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)\b", p)
         if m and float(m.group(2)) != 0:
             return _fmt(float(m.group(1)) / float(m.group(2)))
+
+    # profit / loss percentage: "buys for $80 ... sells for $100 ... profit percentage"
+    if "percentage" in p and ("profit" in p or "loss" in p):
+        amts = re.findall(r"\$\s*(\d+(?:\.\d+)?)", p) or re.findall(r"(\d+(?:\.\d+)?)\s*dollars", p)
+        buys = any(k in p for k in ("buys", "bought", "cost", "purchase"))
+        sells = any(k in p for k in ("sells", "sold"))
+        if buys and sells and len(amts) == 2:
+            cost, sell = float(amts[0]), float(amts[1])
+            if cost and "profit" in p and sell >= cost:
+                return _fmt((sell - cost) / cost * 100.0)
+            if cost and "loss" in p and cost >= sell:
+                return _fmt((cost - sell) / cost * 100.0)
+
+    # reverse percent change: "increased by 40% becomes 70" -> 70 / 1.40 = 50
+    if len(re.findall(r"\d+(?:\.\d+)?", p)) == 2:
+        m = re.search(r"(?:increased|grew|rose|raised|went up)\s+by\s+(\d+(?:\.\d+)?)\s*%"
+                      r".*?(?:becomes?|is now|equals?|is|to)\s+(\d+(?:\.\d+)?)", p)
+        if m:
+            return _fmt(float(m.group(2)) / (1 + float(m.group(1)) / 100.0))
+        m = re.search(r"(?:decreased|reduced|fell|dropped|lowered|went down)\s+by\s+(\d+(?:\.\d+)?)\s*%"
+                      r".*?(?:becomes?|is now|equals?|is|to)\s+(\d+(?:\.\d+)?)", p)
+        if m and float(m.group(1)) != 100:
+            return _fmt(float(m.group(2)) / (1 - float(m.group(1)) / 100.0))
 
     return None
 

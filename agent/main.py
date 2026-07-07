@@ -177,6 +177,9 @@ def selftest() -> int:
         # regression in the operand-count / percent guards would fail these.
         {"task_id": "st5", "prompt": "What is 2 to the power of 3 plus 1?"},
         {"task_id": "st6", "prompt": "What is 20% of 50 plus 5?"},
+        # race ordering ("ahead of" + "won") and profit% solvers
+        {"task_id": "st7", "prompt": "In a race, Maya finished ahead of Leo, and Leo finished ahead of Nina. Who won?"},
+        {"task_id": "st8", "prompt": "A shopkeeper buys an item for $80 and sells it for $100. What is the profit percentage?"},
     ]
     d = tempfile.mkdtemp()
     inp, outp = os.path.join(d, "tasks.json"), os.path.join(d, "results.json")
@@ -189,14 +192,16 @@ def selftest() -> int:
     try:
         out = json.loads(open(outp, encoding="utf-8").read())
         by = {o["task_id"]: o["answer"] for o in out}
-        ok = (isinstance(out, list) and len(out) == 6
+        ok = (isinstance(out, list) and len(out) == 8
               and all(isinstance(o.get("task_id"), str) and isinstance(o.get("answer"), str) for o in out)
               and "144" in by["st1"]
               and "carol" in by["st2"].lower()
               and "yes" in by["st3"].lower()
               and "40" in by["st4"]                       # discount anchored correctly
               and by["st5"].strip() == ""                 # power+add: solver deferred
-              and by["st6"].strip() == "")                # percent+add: solver deferred
+              and by["st6"].strip() == ""                 # percent+add: solver deferred
+              and "maya" in by["st7"].lower()             # race ordering (ahead of / won)
+              and "25" in by["st8"])                      # profit percentage
     except Exception as e:
         print(f"[selftest] FAIL: {e}")
         return 1
