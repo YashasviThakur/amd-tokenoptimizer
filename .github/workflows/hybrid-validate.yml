@@ -19,8 +19,8 @@ jobs:
       - name: Build image (linux/amd64)
         run: docker build -f docker/agent.Dockerfile -t tokenopt-hybrid:test .
 
-      - name: Image size (must be < 10GB compressed)
-        run: docker image inspect tokenopt-hybrid:test --format 'uncompressed size: {{.Size}} bytes'
+      - name: Image size
+        run: docker image inspect tokenopt-hybrid:test --format 'uncompressed size {{.Size}} bytes'
 
       - name: Self-test (solver + output contract, offline)
         run: docker run --rm --entrypoint python tokenopt-hybrid:test -m agent.main --selftest
@@ -29,22 +29,11 @@ jobs:
         run: |
           mkdir -p in out
           cp eval/datasets/practice_tasks.json in/tasks.json
-          docker run --rm -e ALLOWED_MODELS= -e LOCAL_THREADS=2 \
-            -e INPUT_PATH=/input/tasks.json -e OUTPUT_PATH=/output/results.json \
-            -v "$PWD/in:/input" -v "$PWD/out:/output" \
-            tokenopt-hybrid:test
-          echo "::group::results.json"
+          docker run --rm -e ALLOWED_MODELS= -e LOCAL_THREADS=2 -e INPUT_PATH=/input/tasks.json -e OUTPUT_PATH=/output/results.json -v "$PWD/in:/input" -v "$PWD/out:/output" tokenopt-hybrid:test
+          echo "--- results.json ---"
           cat out/results.json
           echo ""
-          echo "::endgroup::"
-          echo "::group::routes + confidence"
+          echo "--- meta (routes + confidence) ---"
           cat out/results.json.meta.json
           echo ""
-          echo "::endgroup::"
-          python - <<'PY'
-          import json
-          out = json.load(open("out/results.json"))
-          assert isinstance(out, list) and len(out) == 8, out
-          assert all(isinstance(x.get("task_id"), str) and isinstance(x.get("answer"), str) for x in out), out
-          print("contract OK: 8 valid {task_id, answer} entries")
-          PY
+          python -c "import json,sys; o=json.load(open('out/results.json')); assert isinstance(o,list) and len(o)==8 and all(isinstance(x.get('task_id'),str) and isinstance(x.get('answer'),str) for x in o), o; print('contract OK: 8 valid entries')"
