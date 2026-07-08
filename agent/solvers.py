@@ -119,31 +119,54 @@ def solve_ordering(prompt: str) -> str | None:
     return max(score, key=score.get) if want_max else min(score, key=score.get)
 
 
+_PROP_VERB = (r"(?:need|needs|require|requires|have|has|can|absorb|absorbs|"
+              r"contain|contains|produce|produces|breathe|breathes|grow|grows)")
+
+
 def solve_syllogism(prompt: str) -> str | None:
-    """'all A are B, all B are C … are all A C?' → Yes/No, or None if unprovable."""
+    """Chained universal syllogism → Yes/No, or None if unprovable.
+
+    Handles 'all A are B, all B are C, are all A C?' AND a multi-word predicate
+    'all A are B, all B need water, do all A need water?'. Proves only a fully
+    transitive chain; anything with 'some' or an unproven target defers.
+    """
     q = prompt.lower()
     if re.search(r"\bsome\b", q):
         return None  # existentials: defer to the model
-    m = re.search(r"are\s+all\s+(\w+)\s+(?:definitely\s+|necessarily\s+)?(\w+)\s*\?", q)
+
+    def norm(w):
+        return w.strip().rstrip("s")
+
+    # question: "are all X Y?" or "do all X <predicate phrase>?"
+    m = (re.search(r"are\s+all\s+(\w+?)s?\s+(?:definitely\s+|necessarily\s+)?([\w ]+?)\s*\?", q)
+         or re.search(r"do\s+all\s+(\w+?)s?\s+([\w ]+?)\s*\?", q))
     if not m:
         return None
-    x, y = m.group(1), m.group(2)
+    x, target = norm(m.group(1)), m.group(2).strip()
+    tnorm = norm(target)
+
+    # premises = everything EXCEPT the question clause (so the question can't be
+    # mistaken for a premise and prove itself).
+    prem = q[:m.start()] + " " + q[m.end():]
 
     # a direct negative premise on the queried pair proves "No"
-    for a, b in re.findall(r"no\s+(\w+)\s+are\s+(\w+)", q):
-        if a == x and b == y:
+    for a, b in re.findall(r"no\s+(\w+?)s?\s+are\s+(\w+?)s?\b", prem):
+        if norm(a) == x and norm(b) == tnorm:
             return "No"
 
-    pos = re.findall(r"all\s+(\w+)\s+are\s+(\w+)", q)
-    if not pos:
-        return None
+    # implication graph: "all A are B" (subtype) + "all A <predicate>" (property)
     adj = collections.defaultdict(set)
-    for a, b in pos:
-        adj[a].add(b)
+    for a, b in re.findall(r"all\s+(\w+?)s?\s+are\s+(\w+?)s?\b", prem):
+        adj[norm(a)].add(norm(b))
+    for a, prop in re.findall(rf"all\s+(\w+?)s?\s+({_PROP_VERB}[\w ]*?)\s*[.?]", prem):
+        adj[norm(a)].add(prop.strip())
+    if not adj:
+        return None
+
     seen, stack = set(), [x]
     while stack:
         for t in adj[stack.pop()]:
-            if t == y:
+            if t == tnorm or norm(t) == tnorm or t == target:
                 return "Yes"
             if t not in seen:
                 seen.add(t)
