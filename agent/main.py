@@ -49,7 +49,9 @@ def _normalize_tasks(data) -> list[dict]:
             tid = raw.get("id")
         if tid is None:
             tid = f"t{i + 1}"
-        tasks.append({"task_id": tid, "prompt": _extract_prompt(raw)})
+        # contract requires STRING task_ids; an int/float/list id would emit a
+        # non-string and fail INVALID_RESULTS_SCHEMA. str() on a str is a no-op.
+        tasks.append({"task_id": str(tid), "prompt": _extract_prompt(raw)})
     return tasks
 
 
@@ -79,6 +81,17 @@ def _build_local():
     disabled or unavailable — the agent then falls back to solvers + Fireworks."""
     if not config.use_local:
         return None
+    # AVX2 preflight: the llama.cpp build targets AVX2/FMA/F16C. On a CPU without
+    # them the first op raises SIGILL — an UNCATCHABLE signal that kills the process
+    # before any output is written (guaranteed ZERO). Detect it and degrade to a
+    # valid Fireworks-only run instead.
+    try:
+        with open("/proc/cpuinfo", encoding="utf-8") as f:
+            if "avx2" not in f.read().lower():
+                print("[agent] CPU lacks AVX2; skipping local model (Fireworks-only)", file=sys.stderr)
+                return None
+    except Exception:
+        pass  # not Linux / no /proc (dev box) — proceed
     try:
         threads = config.local_threads or None  # 0 -> llama.cpp default
         m = LocalModel(config.local_model_path, n_ctx=config.local_n_ctx, n_threads=threads)
@@ -103,27 +116,50 @@ def run() -> dict:
         _write_json(config.output_path, [])  # valid JSON, still exit 0
         return {"tasks": 0, "error": str(e)}
 
-    # Per-task: solver (free) -> local (free, easy categories) -> Fireworks. A soft
-    # wall-clock deadline flips remaining tasks to Fireworks (fast) so a slow CPU
-    # can never blow the 10-min budget and score TIMEOUT=0.
+    # Per-task: solver (free) -> local (free, easy categories) -> Fireworks.
+    #  * soft deadline (run_deadline_s): flip remaining tasks to Fireworks (fast).
+    #  * HARD deadline (+60s): stop the loop entirely and fill the rest with empty
+    #    answers, so a large/slow hidden set can never blow the 10-min budget. The
+    #    harness SIGKILLs at ~600s with NO output = ZERO; a partial file is scored.
+    #  * incremental atomic writes: a mid-loop kill always leaves a valid results.json.
     results, meta, routes = [], [], {}
-    for task in tasks:
-        prefer_remote = (time.time() - t0) > config.run_deadline_s
+    hard_deadline = config.run_deadline_s + 60.0
+    n = len(tasks)
+    for i, task in enumerate(tasks):
+        elapsed = time.time() - t0
+        if elapsed > hard_deadline:  # out of time — emit remaining as empty and stop
+            print(f"[agent] hard deadline {hard_deadline:.0f}s hit at task {i}/{n}; "
+                  f"emitting {n - i} remaining as empty", file=sys.stderr)
+            for rem in tasks[i:]:
+                results.append({"task_id": str(rem.get("task_id")), "answer": ""})
+                routes["deadline-skip"] = routes.get("deadline-skip", 0) + 1
+            break
+        prefer_remote = elapsed > config.run_deadline_s
         try:
             r = route(task, local, remote, prefer_remote=prefer_remote)
         except Exception as e:  # never let one task sink the batch
             r = {"task_id": task.get("task_id"), "answer": "", "route": "error",
                  "category": "?", "tokens": 0, "error": str(e)}
         routes[r.get("route", "?")] = routes.get(r.get("route", "?"), 0) + 1
-        results.append({"task_id": r.get("task_id"), "answer": _answer_str(r.get("answer"))})
+        results.append({"task_id": str(r.get("task_id")), "answer": _answer_str(r.get("answer"))})
         meta.append({"task_id": r.get("task_id"), "route": r.get("route"),
                      "category": r.get("category"), "confidence": r.get("confidence"),
                      "tokens": r.get("tokens") or 0})
+        if i % 8 == 7:  # periodic atomic flush -> a kill leaves a valid partial file
+            try:
+                _write_json(config.output_path, results)
+            except Exception:
+                pass
 
     try:
         _write_json(config.output_path, results)
-    except Exception as e:  # last resort — never crash on the primary write
+    except Exception as e:  # last resort — never crash; write SOMETHING valid
         print(f"[agent] primary write failed: {e}", file=sys.stderr)
+        try:
+            with open(config.output_path, "w", encoding="utf-8") as f:
+                json.dump(results, f, ensure_ascii=False, default=str)
+        except Exception:
+            pass
     try:  # diagnostics sidecar for the eval harness (ignored by the judging harness)
         _write_json(config.output_path + ".meta.json", meta)
     except Exception:

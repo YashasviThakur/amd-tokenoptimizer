@@ -29,9 +29,14 @@ SELF_CONSISTENCY = {"factual"}
 RETRY_CATEGORIES = {"ner", "summarization", "sentiment"}
 
 # Base trust per category for a ~3B local model (measured on the practice set:
-# reliable on sentiment/summary/ner, decent on factual, poor on math/logic/code).
+# reliable on sentiment/summary/ner, poor on math/logic/code).
+# factual is deliberately LOW: it has no correctness verifier and self-consistency
+# only measures variance, so a stable hallucination (both draws agree on the same
+# wrong fact) would be kept at 0 tokens — a gate risk. At 0.35, even two agreeing
+# draws (0.35+0.20=0.55) stay < escalate_threshold, so every factual task escalates
+# to Fireworks (accurate) at a small token cost. Gate safety > a few tokens.
 PRIOR = {
-    "sentiment": 0.82, "summarization": 0.72, "ner": 0.74, "factual": 0.56,
+    "sentiment": 0.82, "summarization": 0.72, "ner": 0.74, "factual": 0.35,
     "math": 0.28, "logic": 0.28, "code_debug": 0.33, "code_gen": 0.38,
 }
 
@@ -48,7 +53,7 @@ def _confidence(category: str, prompt: str, samples: list[str]) -> float:
     if category == "sentiment":
         c += 0.20 if V.label_ok(ans) else -0.50
     elif category == "ner":
-        c += 0.15 if (V.valid_json(ans) or _looks_labeled(ans)) else -0.40
+        c += 0.15 if (V.valid_ner_json(ans) or _looks_labeled(ans)) else -0.40
     elif category == "summarization":
         c += 0.10 if V.length_ok(prompt, ans) else -0.20
     elif category == "factual":
@@ -116,8 +121,11 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
                 "category": category, "tokens": 0, "confidence": 1.0}
 
     have_local = bool(local) and config.use_local
-    # 2) hard categories / near-deadline / no local -> Fireworks (skip slow local)
-    if config.has_remote() and (prefer_remote or not have_local or category in HARD):
+    # 2) hard categories / near-deadline / no local / very long prompt -> Fireworks.
+    # A long prompt means slow CPU prefill on 2 vCPU, which risks the <30s/task
+    # limit, so escalate it instead of grinding locally.
+    too_long = len(prompt) > config.local_max_prompt_chars
+    if config.has_remote() and (prefer_remote or not have_local or category in HARD or too_long):
         return _fireworks(task_id, category, prompt, remote)
 
     # 3) local answer for the categories a small model handles well

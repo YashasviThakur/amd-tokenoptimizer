@@ -39,18 +39,23 @@ class Config:
     local_n_ctx: int = int(os.getenv("LOCAL_N_CTX", "4096"))
     # 0 = let llama.cpp pick (all cores). Grading box has 2 vCPU.
     local_threads: int = int(os.getenv("LOCAL_THREADS", "0"))
-    # self-consistency draws for hard categories (agreement = free confidence
-    # signal). Costs CPU time; 1 disables it.
-    local_samples_hard: int = int(os.getenv("LOCAL_SAMPLES_HARD", "2"))
+    # self-consistency draws (agreement = a free confidence signal). 1 disables it;
+    # kept at 1 since factual now always escalates, and a 2nd draw doubles CPU time.
+    local_samples_hard: int = int(os.getenv("LOCAL_SAMPLES_HARD", "1"))
     local_retry: bool = os.getenv("LOCAL_RETRY", "0").strip().lower() in ("1", "true", "yes")
+    # Prompts longer than this skip the local model (slow CPU prefill on 2 vCPU
+    # risks the <30s/task limit) and escalate to Fireworks instead.
+    local_max_prompt_chars: int = int(os.getenv("LOCAL_MAX_PROMPT_CHARS", "2000"))
 
     # Keep a local answer when confidence >= this; else escalate to Fireworks.
     escalate_threshold: float = float(os.getenv("ESCALATE_THRESHOLD", "0.60"))
-    request_timeout: float = float(os.getenv("REQUEST_TIMEOUT", "28"))
-    # Global wall-clock budget (grading kills at 10min). When elapsed exceeds this,
-    # remaining tasks skip slow local inference and go straight to Fireworks so the
-    # run always finishes and writes output. Trades a few tokens to avoid TIMEOUT=0.
-    run_deadline_s: float = float(os.getenv("RUN_DEADLINE_S", "540"))
+    # httpx read timeout. 14s so a single Fireworks call + one retry (14+0.5+14)
+    # stays under the <30s/task limit even against a slow-but-alive endpoint.
+    request_timeout: float = float(os.getenv("REQUEST_TIMEOUT", "14"))
+    # Soft wall-clock budget: past this, remaining tasks skip local and go to
+    # Fireworks (fast). main.py adds a HARD stop (+60s) that ends the loop and emits
+    # empties, so a large/slow hidden set can never blow the 10-min budget (=ZERO).
+    run_deadline_s: float = float(os.getenv("RUN_DEADLINE_S", "480"))
     # Baseline switch used by the eval harness: force every task to Fireworks.
     force_remote: bool = os.getenv("FORCE_REMOTE", "0").strip().lower() in ("1", "true", "yes")
 

@@ -97,6 +97,25 @@ def code_compiles(text: str) -> bool:
         return False
 
 
+_NER_KEYS = {"person", "people", "org", "organization", "organisation",
+             "location", "loc", "place", "date", "time", "misc"}
+
+
+def valid_ner_json(text: str) -> bool:
+    """Stricter than valid_json for NER confidence: require a JSON OBJECT keyed by
+    entity types (the requested schema), not just any parseable JSON. A bare list
+    like ["Obama"] or a wrong-shape blob no longer counts as 'well-formed'."""
+    raw = text or ""
+    m = _FENCE_RE.search(raw)
+    if m:
+        raw = m.group(1)
+    try:
+        obj = json.loads(raw.strip())
+    except Exception:
+        return False
+    return isinstance(obj, dict) and any(str(k).lower() in _NER_KEYS for k in obj)
+
+
 def valid_json(text: str) -> bool:
     raw = text or ""
     m = _FENCE_RE.search(raw)

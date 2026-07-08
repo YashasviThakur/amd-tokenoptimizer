@@ -13,9 +13,9 @@ POLICY = {
     "factual":       ("Answer correctly and concisely. Output only the answer, no preamble.", 128),
     "math":          ("Solve the problem. Output only the final numeric answer, nothing else.", 128),
     "sentiment":     ("Classify the sentiment. Reply with exactly one word: positive, negative, or neutral.", 64),
-    "summarization": ("Summarize as instructed, honoring any length constraint. Output only the summary.", 256),
+    "summarization": ("Summarize as instructed, honoring any length constraint. Output only the summary.", 160),
     "ner":           ('Extract named entities. Output ONLY minified JSON with keys '
-                      '"person","org","location","date" (each a list of strings).', 256),
+                      '"person","org","location","date" (each a list of strings).', 192),
     "code_debug":    ("Fix the bug. Output only the corrected code, no explanation.", 1024),
     "logic":         ("Solve the puzzle. Reason internally, then output only the final answer.", 128),
     "code_gen":      ("Write the function to spec. Output only the code, no explanation.", 1024),

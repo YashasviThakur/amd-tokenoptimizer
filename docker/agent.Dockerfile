@@ -49,7 +49,8 @@ ENV INPUT_PATH=/input/tasks.json \
     OUTPUT_PATH=/output/results.json \
     USE_LOCAL=1 \
     LOCAL_MODEL_PATH=/models/qwen2.5-3b-instruct-q4_k_m.gguf \
-    LOCAL_THREADS=0 \
+    LOCAL_THREADS=2 \
+    LOCAL_SAMPLES_HARD=1 \
     REASONING_EFFORT=low \
     REMOTE_MODEL=accounts/fireworks/models/gemma-4-31b-it
 
