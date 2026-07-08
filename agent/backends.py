@@ -1,8 +1,8 @@
-"""Fireworks backend: one metered OpenAI /chat/completions client.
+"""Model backends: a bundled local model (free) and a Fireworks client (metered).
 
-`remote` talks to Fireworks via FIREWORKS_BASE_URL. Every task is answered by
-plain deterministic code (0 tokens) or a call through here — the tokens metered
-here are the score.
+`LocalModel` runs a small GGUF in-process via llama-cpp-python (CPU) — free, not
+metered. `Model` talks to Fireworks via FIREWORKS_BASE_URL; the tokens it meters
+are the score. Both expose the same .chat() signature so the router is agnostic.
 """
 from __future__ import annotations
 
