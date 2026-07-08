@@ -14,6 +14,11 @@ CATEGORIES = (
     "ner", "code_debug", "logic", "code_gen",
 )
 
+# Categories where a small (2-3B) local model is unreliable — multi-step
+# reasoning and code. The router samples these twice (self-consistency) and is
+# quick to escalate them to Fireworks.
+HARD = {"math", "logic", "code_debug", "code_gen"}
+
 _CODE_HINT = re.compile(r"```|def |class |function |\bcode\b|python|javascript|java\b|c\+\+")
 _CODE_BLOCK = re.compile(r"\bdef\s+\w+\s*\(|```|\bclass\s+\w+\s*[:(]")
 _WANTS_CODE = re.compile(
@@ -61,12 +66,20 @@ def classify(prompt: str) -> str:
         return "math"
     if re.search(r"[0-9]+\s*[\+\-\*/x]\s*[0-9]+", p):
         return "math"
+    # constraint/assignment puzzle: a "who owns/sits/…?" question with constraint
+    # language ("each a different", "does not", "neither"). These are deductive
+    # logic (not factual) — a small model gets them wrong, so route them to escalate.
+    puzzle = bool(re.search(r"\bwho (?:owns|has|holds|sits|sit|drinks|lives|plays|drives|wears|"
+                            r"got|likes|is (?:in|next|the|first|last|second))\b", p)
+                  and re.search(r"\b(each|a different|different (?:pet|color|colour|job|house|drink|"
+                                r"sport)|does not|doesn't|do not|don't|neither|only one|not the|"
+                                r"no one|no two)\b", p))
     if any(k in p for k in ("who is the shortest", "who is the tallest", "who is the oldest",
                             "who is the youngest", "if all", "puzzle", "seating", "ranking",
                             "ranked by", "ranked from", "each of", "deduce", "in what order",
                             "which of the following", "who sits", "constraints", "answer yes or no",
                             "no ties", "finished ahead", "scored higher", "scored lower")) \
-            or _COMPARATIVE.search(p):
+            or _COMPARATIVE.search(p) or puzzle:
         return "logic"
     if _CODE_HINT.search(p):
         return "code_gen" if ("write" in p or "implement" in p) else "code_debug"

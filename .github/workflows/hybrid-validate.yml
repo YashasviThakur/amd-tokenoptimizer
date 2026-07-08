@@ -1,0 +1,50 @@
+name: hybrid-validate
+
+# Branch-only validation for the bundled-local-model hybrid. Builds the image on
+# a native linux/amd64 runner (like the judging VM), proves the local model LOADS
+# on linux (guards against the illegal-instruction wheel risk), and benchmarks the
+# practice tasks throttled to 2 threads (~the 2-vCPU grading box). Does NOT push —
+# the live :latest submission is only updated from main.
+on:
+  push:
+    branches: [hybrid-local]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image (linux/amd64)
+        run: docker build -f docker/agent.Dockerfile -t tokenopt-hybrid:test .
+
+      - name: Image size (must be < 10GB compressed)
+        run: docker image inspect tokenopt-hybrid:test --format 'uncompressed size: {{.Size}} bytes'
+
+      - name: Self-test (solver + output contract, offline)
+        run: docker run --rm --entrypoint python tokenopt-hybrid:test -m agent.main --selftest
+
+      - name: Practice benchmark (local model only, 2 threads, offline)
+        run: |
+          mkdir -p in out
+          cp eval/datasets/practice_tasks.json in/tasks.json
+          docker run --rm -e ALLOWED_MODELS= -e LOCAL_THREADS=2 \
+            -e INPUT_PATH=/input/tasks.json -e OUTPUT_PATH=/output/results.json \
+            -v "$PWD/in:/input" -v "$PWD/out:/output" \
+            tokenopt-hybrid:test
+          echo "::group::results.json"
+          cat out/results.json
+          echo ""
+          echo "::endgroup::"
+          echo "::group::routes + confidence"
+          cat out/results.json.meta.json
+          echo ""
+          echo "::endgroup::"
+          python - <<'PY'
+          import json
+          out = json.load(open("out/results.json"))
+          assert isinstance(out, list) and len(out) == 8, out
+          assert all(isinstance(x.get("task_id"), str) and isinstance(x.get("answer"), str) for x in out), out
+          print("contract OK: 8 valid {task_id, answer} entries")
+          PY

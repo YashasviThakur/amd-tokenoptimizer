@@ -11,13 +11,9 @@ import os
 import sys
 import time
 
-from collections import defaultdict
-
-from .backends import Model, RemoteMeter
-from .classifier import classify
+from .backends import LocalModel, Model, RemoteMeter
 from .config import config
-from .router import BATCHABLE, fireworks_batch, route
-from .solvers import free_solve
+from .router import route
 
 _PROMPT_KEYS = ("prompt", "question", "input", "text", "query", "task")
 
@@ -78,10 +74,26 @@ def _write_json(path: str, obj) -> None:
     os.replace(tmp, path)
 
 
+def _build_local():
+    """Load the bundled local model once (llama-cpp-python, CPU). Returns None if
+    disabled or unavailable — the agent then falls back to solvers + Fireworks."""
+    if not config.use_local:
+        return None
+    try:
+        threads = config.local_threads or None  # 0 -> llama.cpp default
+        m = LocalModel(config.local_model_path, n_ctx=config.local_n_ctx, n_threads=threads)
+        print(f"[agent] local model loaded: {config.local_model_path}", file=sys.stderr)
+        return m
+    except Exception as e:
+        print(f"[agent] local model unavailable ({e}); Fireworks-only", file=sys.stderr)
+        return None
+
+
 def run() -> dict:
     t0 = time.time()
     meter = RemoteMeter()
     remote = Model(config.fireworks_base_url, config.fireworks_api_key, config.request_timeout, meter=meter)
+    local = _build_local()
 
     try:
         with open(config.input_path, encoding="utf-8") as f:
@@ -91,57 +103,22 @@ def run() -> dict:
         _write_json(config.output_path, [])  # valid JSON, still exit 0
         return {"tasks": 0, "error": str(e)}
 
-    # pass 1: classify + free deterministic solvers (0 tokens); queue the rest
-    result_by_id, order, pending = {}, [], defaultdict(list)
-    for task in tasks:
-        tid = task.get("task_id")
-        order.append(tid)
-        prompt = task.get("prompt", "")
-        try:
-            category = classify(prompt)
-            solved = None if config.force_remote else free_solve(category, prompt)
-        except Exception:
-            category, solved = "?", None
-        if solved is not None:
-            result_by_id[tid] = {"task_id": tid, "answer": solved, "route": "code",
-                                 "category": category, "tokens": 0}
-        else:
-            pending[category].append(task)
-
-    # pass 2: Fireworks — batch short-answer, SINGLE-LINE tasks (unambiguous
-    # boundaries); everything else stays individual.
-    # Soft global deadline: the judging container is killed at ~10min (→ ZERO for
-    # every task). If a degraded/hung network pushes us near that, stop issuing
-    # calls and let assembly emit the remaining tasks with empty answers — a
-    # partial result that still writes valid JSON beats a kill that writes none.
-    deadline_s = float(os.getenv("RUN_DEADLINE_S", "555"))
-    for category, ctasks in pending.items():
-        if time.time() - t0 > deadline_s:
-            print(f"[agent] deadline {deadline_s}s hit; emitting remaining as empty", file=sys.stderr)
-            break
-        can_batch = (not config.force_remote) and config.batch_size > 1 and category in BATCHABLE
-        singles = [t for t in ctasks if can_batch and "\n" not in (t.get("prompt") or "")]
-        rest = [t for t in ctasks if t not in singles]
-        try:
-            for i in range(0, len(singles), config.batch_size):
-                for r in fireworks_batch(category, singles[i:i + config.batch_size], remote):
-                    result_by_id[r["task_id"]] = r
-            for t in rest:
-                result_by_id[t.get("task_id")] = route(t, remote)
-        except Exception as e:  # never let one group sink the batch
-            for t in ctasks:
-                result_by_id.setdefault(t.get("task_id"), {
-                    "task_id": t.get("task_id"), "answer": "", "route": "error",
-                    "category": category, "error": str(e)})
-
-    # assemble results in the original task order
+    # Per-task: solver (free) -> local (free, easy categories) -> Fireworks. A soft
+    # wall-clock deadline flips remaining tasks to Fireworks (fast) so a slow CPU
+    # can never blow the 10-min budget and score TIMEOUT=0.
     results, meta, routes = [], [], {}
-    for tid in order:
-        r = result_by_id.get(tid, {"task_id": tid, "answer": "", "route": "missing", "category": "?"})
+    for task in tasks:
+        prefer_remote = (time.time() - t0) > config.run_deadline_s
+        try:
+            r = route(task, local, remote, prefer_remote=prefer_remote)
+        except Exception as e:  # never let one task sink the batch
+            r = {"task_id": task.get("task_id"), "answer": "", "route": "error",
+                 "category": "?", "tokens": 0, "error": str(e)}
         routes[r.get("route", "?")] = routes.get(r.get("route", "?"), 0) + 1
         results.append({"task_id": r.get("task_id"), "answer": _answer_str(r.get("answer"))})
         meta.append({"task_id": r.get("task_id"), "route": r.get("route"),
-                     "category": r.get("category"), "tokens": r.get("tokens") or 0})
+                     "category": r.get("category"), "confidence": r.get("confidence"),
+                     "tokens": r.get("tokens") or 0})
 
     try:
         _write_json(config.output_path, results)
@@ -186,7 +163,8 @@ def selftest() -> int:
     _write_json(inp, sample)
 
     config.input_path, config.output_path = inp, outp
-    config.allowed_models = []  # force offline: no remote
+    config.allowed_models = []      # force offline: no remote
+    config.use_local = False        # solver + contract check only (no model load)
     run()
 
     try:

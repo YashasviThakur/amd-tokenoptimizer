@@ -87,3 +87,29 @@ class Model:
                 ct = sum(count_tokens(t) for t in texts)
             self.meter.add(pt, ct)
         return texts
+
+
+class LocalModel:
+    """In-process local model (llama-cpp-python) — a drop-in with the same .chat()
+    signature as the Fireworks Model, so the router is unchanged. No server
+    (Ollama isn't available in the grading box); weights are bundled in the image
+    and loaded once at startup. Local inference is FREE (never metered)."""
+
+    meter = None  # local answers cost 0 tokens
+
+    def __init__(self, model_path: str, n_ctx: int = 4096, n_threads: int | None = None):
+        from llama_cpp import Llama  # lazy: only the local-enabled image ships it
+        self.llm = Llama(model_path=model_path, n_ctx=n_ctx, n_threads=n_threads,
+                         n_batch=256, verbose=False)
+
+    def chat(self, model, messages, max_tokens: int = 128, temperature: float = 0.0,
+             n: int = 1, reasoning_effort=None) -> list[str]:
+        """Return n completions. n>1 = self-consistency samples (varied seed + a
+        little temperature); the router treats agreement as a free signal."""
+        outs = []
+        for i in range(max(1, n)):
+            temp = temperature if n == 1 else max(temperature, 0.4)
+            r = self.llm.create_chat_completion(
+                messages=messages, max_tokens=max_tokens, temperature=temp, seed=1234 + i)
+            outs.append(r["choices"][0]["message"]["content"])
+        return outs
