@@ -17,12 +17,17 @@ LABEL org.opencontainers.image.source="https://github.com/YashasviThakur/amd-tok
 
 WORKDIR /app
 
-# llama-cpp-python (CPU). Pin 0.2.90 — a conservative instruction baseline that
-# loads on any x86-64 (newer wheels use AVX-512 and crash on some CPUs) and whose
-# bundled llama.cpp supports Qwen2.5. Installed from the CPU wheel index.
-RUN pip install --no-cache-dir "llama-cpp-python==0.2.90" \
-      --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu \
- && pip install --no-cache-dir "huggingface_hub>=0.23"
+# Build llama-cpp-python (CPU) FROM SOURCE with a portable AVX2 baseline
+# (GGML_NATIVE=OFF). Prebuilt wheels are risky: the musllinux wheel won't load on
+# glibc slim, and a -march=native / AVX-512 wheel can pass on the build CPU but
+# crash with an illegal instruction on the grading VM. An explicit AVX2/FMA/F16C
+# build runs on any modern x86-64 (universal on cloud) and links glibc.
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential cmake \
+ && CMAKE_ARGS="-DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON" \
+      pip install --no-cache-dir "llama-cpp-python==0.3.2" \
+ && pip install --no-cache-dir "huggingface_hub>=0.23" \
+ && apt-get purge -y build-essential cmake && apt-get autoremove -y \
+ && rm -rf /var/lib/apt/lists/*
 
 # Bundle the local model weights in the image (downloaded at build time — CI has
 # fast HF network; the grading box never downloads). ~1.9GB, well under the 10GB cap.

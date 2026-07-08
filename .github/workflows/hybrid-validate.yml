@@ -36,4 +36,4 @@ jobs:
           echo "--- meta (routes + confidence) ---"
           cat out/results.json.meta.json
           echo ""
-          python -c "import json,sys; o=json.load(open('out/results.json')); assert isinstance(o,list) and len(o)==8 and all(isinstance(x.get('task_id'),str) and isinstance(x.get('answer'),str) for x in o), o; print('contract OK: 8 valid entries')"
+          python -c "import json; o=json.load(open('out/results.json')); assert isinstance(o,list) and len(o)==8 and all(isinstance(x.get('task_id'),str) and isinstance(x.get('answer'),str) for x in o), o; ne=sum(1 for x in o if x['answer'].strip()); print(f'contract OK: 8 entries, {ne} non-empty'); assert ne>=7, f'MODEL DID NOT LOAD (only {ne}/8 answered) — check the llama_cpp .so'"
