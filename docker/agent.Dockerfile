@@ -22,11 +22,13 @@ WORKDIR /app
 # glibc slim, and a -march=native / AVX-512 wheel can pass on the build CPU but
 # crash with an illegal instruction on the grading VM. An explicit AVX2/FMA/F16C
 # build runs on any modern x86-64 (universal on cloud) and links glibc.
+# GGML_OPENMP=OFF -> llama.cpp uses its own pthread pool, so the compiled .so has
+# no libgomp runtime dependency. Build tools are kept (only ~400MB; image stays
+# well under 10GB) so every runtime lib the .so needs is present.
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential cmake \
- && CMAKE_ARGS="-DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON" \
+ && CMAKE_ARGS="-DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON -DGGML_OPENMP=OFF" \
       pip install --no-cache-dir "llama-cpp-python==0.3.2" \
  && pip install --no-cache-dir "huggingface_hub>=0.23" \
- && apt-get purge -y build-essential cmake && apt-get autoremove -y \
  && rm -rf /var/lib/apt/lists/*
 
 # Bundle the local model weights in the image (downloaded at build time — CI has
