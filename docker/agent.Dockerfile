@@ -36,10 +36,16 @@ COPY agent ./agent
 # The router calls ONLY the harness-injected ALLOWED_MODELS, each VERBATIM: the
 #   judging proxy matches ids exactly, so any off-list string (a re-spelled id or an
 #   always-on model not on the list) makes the whole submission a MODEL_VIOLATION.
-# REQUEST_TIMEOUT=14 / PER_TASK_BUDGET_S=16 / RUN_DEADLINE_S=300 / MAX_WORKERS=5:
-#   hard time bounds so a slow/hanging grader network can never exceed the 10-min /
-#   30s-per-task limits; main.py adds a +60s hard stop that emits empties for any
-#   unfinished task and always writes a valid results.json.
+# MAX_WORKERS=3 / REQUEST_TIMEOUT=22 / PER_TASK_BUDGET_S=27 / RUN_DEADLINE_S=420:
+#   RELIABILITY over raw speed. The judging proxy rate-limits concurrent bursts
+#   (429 -> after one backoff the task fails over / empties -> WRONG); 3 workers is
+#   the measured burst the proxy tolerates (5 regressed it). The allowed models are
+#   REASONING models whose trace can legitimately run >14s on the grader's box, and
+#   a ReadTimeout is NOT retried -> an empty (wrong) answer; 22s (still <30s/task)
+#   lets them finish, and a 27s per-task budget leaves room for a fast 404 failover
+#   before the real call. Time is still bounded: ~19 tasks / 3 workers x 27s well
+#   under 10min, and main.py's +60s hard stop (=480s) emits empties for any
+#   straggler and always writes a valid results.json (a slow set scores, never TIMEOUTs).
 # NO REMOTE_MODEL / ALLOWED_MODELS baked in: the router must call ONLY the models the
 #   grader injects, VERBATIM. Baking a preferred id (gpt-oss-120b) merged it into the
 #   resolved allow-list and got it called first -> MODEL_VIOLATION when the grader's
@@ -51,10 +57,10 @@ ENV INPUT_PATH=/input/tasks.json \
     DISABLE_SOLVERS=0 \
     LOCAL_ONLY=0 \
     REASONING_EFFORT= \
-    REQUEST_TIMEOUT=14 \
-    PER_TASK_BUDGET_S=16 \
-    RUN_DEADLINE_S=300 \
-    MAX_WORKERS=5 \
+    REQUEST_TIMEOUT=22 \
+    PER_TASK_BUDGET_S=27 \
+    RUN_DEADLINE_S=420 \
+    MAX_WORKERS=3 \
     MODEL_DISCOVERY=0
 
 ENTRYPOINT ["python", "-m", "agent.main"]
