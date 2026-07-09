@@ -50,7 +50,7 @@ def main():
             out = remote.chat(model, build_remote_messages(cat, task["prompt"]),
                               max_tokens=max_tokens_for(cat), temperature=0.0,
                               reasoning_effort=config.reasoning_effort)
-            ans = out[0].strip()
+            ans = (out[0].get("text") or "").strip()  # chat() now returns [{text, finish}]
         except Exception as e:
             print(f"  {cat:<14}ERR  {'-':>7}  {e}")
             continue

@@ -15,6 +15,7 @@ some categories. Per task:
 from __future__ import annotations
 
 import re
+import time as _time
 
 from . import verifiers as V
 from .classifier import HARD, classify
@@ -66,43 +67,92 @@ def _looks_labeled(ans: str) -> bool:
     return bool(re.search(r"\(\s*(person|org|organization|location|date|time)\b", ans, re.I))
 
 
-def _pick_remote_model(category: str) -> str:
-    """Choose a model from the harness-injected ALLOWED_MODELS. Prefer a compact
-    non-reasoning instruct model (fewest tokens) and a code model for code."""
-    models = config.allowed_models
+# Families ranked by measured cleanliness/cost (gpt-oss cleanest+cheapest; kimi
+# deprioritized — kimi-k2p5 returns 5xx error bodies, some kimi builds dump
+# reasoning). NOTHING is excluded: a homogeneous grader list is still attempted.
+_FAMILY_PREF = ("gpt-oss", "gemma", "glm", "deepseek", "qwen", "llama", "mixtral", "phi")
+_DEPRIORITIZE = ("kimi",)
+_SHORT_CATEGORIES = {"sentiment", "math", "factual", "logic"}
+
+
+def _candidate_models(category: str) -> list[str]:
+    """Ordered, de-duplicated list of models to TRY (best first). The router fails
+    over down this list when a model errors or truncates — the observed 26% was one
+    bad model with no fallback. Capped so token/latency cost stays bounded."""
+    models = list(dict.fromkeys(config.allowed_models))  # de-dup, keep order
     if not models:
-        # has_remote() may be true off the API key alone (no model list injected).
-        # Fall back to an explicitly preferred model so we still escalate rather
-        # than emit an empty answer (which would fail the accuracy gate).
-        return config.preferred_model
-    if config.preferred_model and config.preferred_model in models:
-        return config.preferred_model
+        # has_remote() can be true off the API key alone (no model list injected).
+        return [config.preferred_model] if config.preferred_model else []
 
-    def find(sub: str):
-        return next((m for m in models if sub in m.lower()), None)
+    def rank(m: str):
+        lm = m.lower()
+        depr = any(d in lm for d in _DEPRIORITIZE)
+        pref = next((i for i, f in enumerate(_FAMILY_PREF) if f in lm), len(_FAMILY_PREF))
+        code_bias = 0 if (category in ("code_gen", "code_debug") and "code" in lm) else 1
+        return (code_bias, 1 if depr else 0, pref, models.index(m))
 
-    if category in ("code_gen", "code_debug"):
-        return find("code") or find("gpt-oss") or find("gemma") or models[0]
-    # gpt-oss returned clean answers at ~3x fewer tokens than the reasoning-heavy
-    # alternatives (deepseek/glm/kimi) in measurement, so prefer it when allowed.
-    return find("gpt-oss") or find("gemma") or models[0]
+    ordered = sorted(models, key=rank)
+    # honor an explicit preference first, if it's actually allowed
+    if config.preferred_model and config.preferred_model in ordered:
+        ordered.remove(config.preferred_model)
+        ordered.insert(0, config.preferred_model)
+    return ordered[:3]  # cap fan-out: 3 attempts bound tokens + per-task time
 
 
-def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0) -> dict:
-    """One minimal Fireworks call; returns the result dict with token count."""
-    model = _pick_remote_model(category)
+def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0,
+               deadline: float | None = None) -> dict:
+    """Escalate to Fireworks, failing over across candidate models until one returns
+    a usable answer. A model that errors (5xx/error-body), times out, or truncates a
+    short answer (finish_reason=length) is abandoned for the next candidate. Bounded
+    by a per-task wall-clock `deadline` so fallback can't blow the <30s/task limit."""
     builder = build_messages if full_prompt else build_remote_messages
+    messages = builder(category, prompt)
+    max_tok = max_tokens_for(category)
+    candidates = _candidate_models(category)
     before = remote.meter.total
-    try:
-        out = remote.chat(model, builder(category, prompt),
-                          max_tokens=max_tokens_for(category), temperature=0.0, n=1,
-                          reasoning_effort=config.reasoning_effort)
-        return {"task_id": task_id, "answer": out[0].strip(), "route": "remote",
-                "category": category, "tokens": remote.meter.total - before,
-                "confidence": round(conf, 3), "model": model}
-    except Exception as e:
-        return {"task_id": task_id, "answer": "", "route": "error", "category": category,
-                "tokens": remote.meter.total - before, "confidence": round(conf, 3), "error": str(e)}
+    last = {"answer": "", "model": "", "error": "no candidates"}
+
+    def _time_left():
+        if deadline is None:
+            return None
+        return deadline - _time.time()
+
+    for model in candidates:
+        if not model:
+            continue
+        # Per model: try at the normal ceiling; if a SHORT answer truncated
+        # (finish=length -> the model reasons in-content and ran out of room), retry
+        # the SAME model ONCE at a higher ceiling before failing over. This is what
+        # rescues a single/homogeneous grader model that can't be escaped by fallback.
+        for mt in (max_tok, min(max_tok * 3, 2048)):
+            rem = _time_left()
+            if rem is not None and rem <= 4.0:  # not enough time for another attempt
+                break
+            call_timeout = min(rem, config.request_timeout) if rem else None
+            try:
+                out = remote.chat(model, messages, max_tokens=mt, temperature=0.0, n=1,
+                                  reasoning_effort=config.reasoning_effort, timeout=call_timeout)
+                ans = (out[0].get("text") or "").strip()
+                finish = out[0].get("finish")
+                truncated_short = finish == "length" and category in _SHORT_CATEGORIES
+                if ans and not truncated_short:  # good answer — done
+                    return {"task_id": task_id, "answer": ans, "route": "remote",
+                            "category": category, "tokens": remote.meter.total - before,
+                            "confidence": round(conf, 3), "model": model}
+                if ans and not last["answer"]:  # keep best-effort partial as a floor
+                    last = {"answer": ans, "model": model, "error": f"weak({finish})"}
+                if truncated_short and mt == max_tok:
+                    continue  # retry SAME model at the higher ceiling
+                break  # empty, or already retried high -> fail over to next model
+            except Exception as e:
+                last = {"answer": last["answer"], "model": model, "error": str(e)[:140]}
+                break  # transport/model error -> next candidate model
+
+    # every candidate failed/weak: return the best non-empty seen (never crash the task)
+    return {"task_id": task_id, "answer": last["answer"],
+            "route": "remote" if last["answer"] else "error", "category": category,
+            "tokens": remote.meter.total - before, "confidence": round(conf, 3),
+            "model": last["model"], "error": None if last["answer"] else last["error"]}
 
 
 def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
@@ -114,10 +164,13 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
     task_id = task.get("task_id")
     prompt = task.get("prompt", "")
     category = classify(prompt)
+    # per-task wall-clock budget for the (possibly multi-model) Fireworks fallback,
+    # so trying alternate models can never blow the <30s/task limit.
+    deadline = _time.time() + config.per_task_budget_s
 
     # baseline mode (eval only): everything straight to Fireworks with full prompts
     if config.force_remote and config.has_remote():
-        return _fireworks(task_id, category, prompt, remote, full_prompt=True)
+        return _fireworks(task_id, category, prompt, remote, full_prompt=True, deadline=deadline)
 
     # 1) free deterministic solvers — 0 tokens, exact
     solved = free_solve(category, prompt)
@@ -131,7 +184,7 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
     # limit, so escalate it instead of grinding locally.
     too_long = len(prompt) > config.local_max_prompt_chars
     if config.has_remote() and (prefer_remote or not have_local or category in HARD or too_long):
-        return _fireworks(task_id, category, prompt, remote)
+        return _fireworks(task_id, category, prompt, remote, deadline=deadline)
 
     # 3) local answer for the categories a small model handles well
     if have_local:
@@ -163,7 +216,7 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
 
         # 4) escalate low-confidence local answer to Fireworks
         if config.has_remote():
-            return _fireworks(task_id, category, prompt, remote, conf=conf)
+            return _fireworks(task_id, category, prompt, remote, conf=conf, deadline=deadline)
 
         # 5) offline last resort: best local answer (never fail the task)
         return {"task_id": task_id, "answer": (samples[0].strip() if samples else ""),

@@ -78,6 +78,11 @@ class Config:
     # overrun on the grader's slower network -> remaining tasks emitted empty ->
     # ~26% accuracy). Concurrent calls cut wall-clock ~Nx so the whole set finishes.
     max_workers: int = int(os.getenv("MAX_WORKERS", "8"))
+    # Per-task wall-clock budget for the model-fallback loop. A task may try up to 3
+    # candidate models; this cap keeps the total per task under the <30s/task limit
+    # (a model that fails fast — 5xx / error body — leaves plenty of room to try the
+    # next; a slow-but-working model just answers on the first attempt).
+    per_task_budget_s: float = float(os.getenv("PER_TASK_BUDGET_S", "28"))
     # Soft wall-clock budget: past this, remaining tasks skip local and go to
     # Fireworks (fast). main.py adds a HARD stop (+60s) that ends the loop and emits
     # empties, so a large/slow hidden set can never blow the 10-min budget (=ZERO).

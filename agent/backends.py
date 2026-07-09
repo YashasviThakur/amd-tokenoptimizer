@@ -15,16 +15,44 @@ import httpx
 from .tokens import count_messages, count_tokens
 
 _THINK = re.compile(r"<think>.*?</think>", re.S | re.I)
+_THINK_OPEN = re.compile(r"<think>.*\Z", re.S | re.I)  # unclosed/truncated trace tail
+
+
+class RecoverableResponseError(Exception):
+    """The gateway returned HTTP 200/4xx/5xx with a body we can't turn into an
+    answer (an {"error":...} body, no "choices", etc.). Distinct from a transport
+    error so the router can fail over to the NEXT allowed model instead of zeroing
+    the task — the observed 26% failure was one bad model with no fallback."""
 
 
 def _clean_answer(text: str) -> str:
     """Strip any inline reasoning trace some models emit before the answer.
 
     Well-behaved reasoning models put the trace in a separate `reasoning_content`
-    field and leave `content` clean, but a few emit a <think>...</think> block
-    inline. Remove it so the judge sees only the answer (an unstripped trace is
-    scored as a wrong answer)."""
-    return _THINK.sub("", text or "").strip()
+    field and leave `content` clean, but some emit a <think>...</think> block
+    inline (closed, or unclosed if truncated). Remove it so the judge sees only
+    the answer (an unstripped trace is scored as a wrong answer)."""
+    t = _THINK.sub("", text or "")
+    t = _THINK_OPEN.sub("", t)
+    return t.strip()
+
+
+def _extract_message_text(choice: dict) -> str:
+    """Pull the answer text out of one choice, defensively across gateway shapes:
+    OpenAI `message.content` (str), a content PARTS list ([{type,text},...]), the
+    `reasoning_content` channel when content is empty, or a legacy `text` field."""
+    msg = choice.get("message") or {}
+    content = msg.get("content")
+    if isinstance(content, list):  # content-parts array (a real OpenAI variant)
+        content = "".join(p.get("text", "") for p in content if isinstance(p, dict))
+    if not (isinstance(content, str) and content.strip()):
+        # content empty/absent -> the answer may be in the reasoning channel, or
+        # a completions-style `text` field.
+        alt = msg.get("reasoning_content")
+        if not (isinstance(alt, str) and alt.strip()):
+            alt = choice.get("text")
+        content = alt if isinstance(alt, str) else ""
+    return _clean_answer(content)
 
 
 class RemoteMeter:
@@ -69,7 +97,13 @@ class Model:
         )
 
     def chat(self, model: str, messages: list[dict], max_tokens: int = 128,
-             temperature: float = 0.0, n: int = 1, reasoning_effort: str | None = None) -> list[str]:
+             temperature: float = 0.0, n: int = 1, reasoning_effort: str | None = None,
+             timeout: float | None = None) -> list[dict]:
+        """One chat-completion call. Returns [{"text": <clean answer>, "finish":
+        <finish_reason>}] — the router uses `finish` to detect truncation and fail
+        over. Raises RecoverableResponseError for any MODEL-specific failure (5xx,
+        4xx, error body, no choices) so the router can try the next allowed model;
+        raises httpx errors only for genuine transport problems."""
         payload = {"model": model, "messages": messages,
                    "max_tokens": max_tokens, "temperature": temperature}
         if n > 1:
@@ -78,34 +112,45 @@ class Model:
             payload["reasoning_effort"] = reasoning_effort
 
         url = f"{self.base_url}/chat/completions"
-        # Retry only on FAST transient failures (connect error / 5xx). Do NOT retry
-        # a read timeout: a model slow enough to blow the read deadline once will do
-        # it again, and a second full-length wait would double the per-task wall
-        # time (risking the <30s/task limit) for no gain. With concurrent routing,
-        # a longer single read timeout — not retries — is what saves slow calls.
+        post_kw = {"json": payload}
+        if timeout is not None:
+            post_kw["timeout"] = timeout
+        # Retry once ONLY on a fast transport blip (connect/pool). A ReadTimeout is
+        # NOT retried (a slow model won't be faster on retry, and it doubles wall
+        # time). A model-specific failure (5xx / 4xx / error body) is NOT retried
+        # either — it's raised as RecoverableResponseError so the router fails over
+        # to the NEXT allowed model, which is what actually rescues the task.
         data = None
         for attempt in range(2):
             try:
-                r = self._client.post(url, json=payload)
-                if r.status_code >= 400 and r.status_code < 500 and "reasoning_effort" in payload:
-                    # ANY 4xx while this param is present: retry without it. A gateway
-                    # that rejects an unrecognized field could use any 4xx code, not
-                    # just 400 — falling through to an empty answer is a gate risk.
+                r = self._client.post(url, **post_kw)
+                if 400 <= r.status_code < 500 and "reasoning_effort" in payload:
+                    # This model/gateway may reject the non-standard field with any
+                    # 4xx — drop it and try once more before giving up on the model.
                     payload.pop("reasoning_effort")
-                    r = self._client.post(url, json=payload)
-                if r.status_code >= 500:
-                    raise httpx.HTTPStatusError("server error", request=r.request, response=r)
-                r.raise_for_status()
+                    r = self._client.post(url, **post_kw)
+                if r.status_code >= 400:
+                    body = ""
+                    try:
+                        body = str(r.json().get("error"))[:120]
+                    except Exception:
+                        body = r.text[:120]
+                    raise RecoverableResponseError(f"{model}: HTTP {r.status_code} {body}")
                 data = r.json()
                 break
-            except httpx.ReadTimeout:
-                raise  # don't retry slow generations — see note above
+            except (httpx.ReadTimeout, RecoverableResponseError):
+                raise
             except Exception:
                 if attempt == 1:
                     raise
                 time.sleep(0.5)
 
-        texts = [_clean_answer(c["message"].get("content")) for c in data["choices"]]
+        if not isinstance(data, dict) or data.get("error") or not data.get("choices"):
+            reason = str(data.get("error"))[:120] if isinstance(data, dict) else "non-dict body"
+            raise RecoverableResponseError(f"{model}: no choices ({reason})")
+
+        results = [{"text": _extract_message_text(c), "finish": c.get("finish_reason")}
+                   for c in data["choices"]]
         if self.meter is not None:
             usage = data.get("usage") or {}
             pt = usage.get("prompt_tokens")
@@ -113,9 +158,9 @@ class Model:
             if pt is None:
                 pt = count_messages(messages)
             if ct is None:
-                ct = sum(count_tokens(t) for t in texts)
+                ct = sum(count_tokens(x["text"]) for x in results)
             self.meter.add(pt, ct)
-        return texts
+        return results
 
 
 class LocalModel:
