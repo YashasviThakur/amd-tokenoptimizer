@@ -100,11 +100,17 @@ def _candidate_models(category: str) -> list[str]:
 
 
 def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0,
-               deadline: float | None = None) -> dict:
+               deadline: float | None = None, local_fallback: str = "") -> dict:
     """Escalate to Fireworks, failing over across candidate models until one returns
     a usable answer. A model that errors (5xx/error-body), times out, or truncates a
     short answer (finish_reason=length) is abandoned for the next candidate. Bounded
-    by a per-task wall-clock `deadline` so fallback can't blow the <30s/task limit."""
+    by a per-task wall-clock `deadline` so fallback can't blow the <30s/task limit.
+
+    `local_fallback` is the answer the local model already produced for this task (if
+    any). If EVERY remote candidate fails/returns empty — the exact symptom when the
+    grader's Fireworks access is dead (no credits / blocked / all 4xx) — we return the
+    local answer instead of an empty string. An empty answer is 0 credit (definitely
+    wrong); the local answer is sometimes right. Never discard it for an empty remote."""
     builder = build_messages if full_prompt else build_remote_messages
     messages = builder(category, prompt)
     max_tok = max_tokens_for(category)
@@ -148,11 +154,16 @@ def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0
                 last = {"answer": last["answer"], "model": model, "error": str(e)[:140]}
                 break  # transport/model error -> next candidate model
 
-    # every candidate failed/weak: return the best non-empty seen (never crash the task)
-    return {"task_id": task_id, "answer": last["answer"],
-            "route": "remote" if last["answer"] else "error", "category": category,
+    # Every candidate failed/weak. Prefer any partial remote answer; else fall back to
+    # the local answer we already had (escalation must NEVER discard a non-empty local
+    # answer — if the grader's Fireworks is down, an empty here scores 0, strictly
+    # worse than the local model's answer). Only a genuinely empty result -> error.
+    answer = last["answer"] or local_fallback
+    route = "remote" if last["answer"] else ("local-fallback" if local_fallback else "error")
+    return {"task_id": task_id, "answer": answer,
+            "route": route, "category": category,
             "tokens": remote.meter.total - before, "confidence": round(conf, 3),
-            "model": last["model"], "error": None if last["answer"] else last["error"]}
+            "model": last["model"], "error": None if answer else last["error"]}
 
 
 def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
@@ -219,9 +230,12 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
             except Exception:
                 pass
 
-        # 4) escalate low-confidence local answer to Fireworks
+        # 4) escalate low-confidence local answer to Fireworks — but pass the local
+        # answer as a fallback so a dead-remote grader can't turn a usable local
+        # answer into an empty (0-credit) one.
         if config.has_remote():
-            return _fireworks(task_id, category, prompt, remote, conf=conf, deadline=deadline)
+            return _fireworks(task_id, category, prompt, remote, conf=conf, deadline=deadline,
+                              local_fallback=(samples[0].strip() if samples else ""))
 
         # 5) offline last resort: best local answer (never fail the task)
         return {"task_id": task_id, "answer": (samples[0].strip() if samples else ""),

@@ -1,25 +1,46 @@
-# Track-1 submission image — token-efficient agent (Fireworks-only).
+# Track-1 submission image — token-efficient hybrid agent (local-first).
 #
-# The agent answers as much as possible for 0 tokens with plain deterministic
-# code solvers, and routes everything else to the cheapest allowed Fireworks
-# model. It does NOT use a bundled local model (USE_LOCAL=0), so this image ships
-# ONLY the tiny Python agent — no 2GB GGUF, no llama-cpp, no build toolchain.
-# Result: a ~150MB image that pulls in seconds (the previous 2.3GB image, whose
-# bulk was an unused model layer, risked slow-pull failures on the grading box).
+# Strategy: answer as much as possible for ZERO Fireworks tokens — with plain
+# deterministic code solvers AND a bundled local model — and use Fireworks only as
+# an optional escalation for the hard tasks a small model can't be trusted on.
+# Local inference is free (0 tokens = best score) AND immune to any Fireworks
+# access/credit problems in the grading sandbox: if the injected Fireworks key is
+# dead, the local model still answers (the router keeps the local answer rather
+# than emitting an empty one). Grading box = 4GB RAM / 2 vCPU, so a 2-3B 4-bit
+# model fits comfortably; the image stays well under the 10GB cap.
 #
-#   docker build -f docker/agent.Dockerfile -t <registry>/tokenoptimizer-agent:latest .
+#   docker buildx build --platform linux/amd64 \
+#     -f docker/agent.Dockerfile -t <registry>/tokenoptimizer-agent:latest --push .
 #
 # The harness injects FIREWORKS_API_KEY / FIREWORKS_BASE_URL / ALLOWED_MODELS and
 # mounts /input + /output. We only read those from the environment.
 FROM python:3.11-slim
 
 LABEL org.opencontainers.image.source="https://github.com/YashasviThakur/amd-tokenoptimizer" \
-      org.opencontainers.image.description="AMD ACT II Track 1 - token-efficient code+Fireworks agent" \
+      org.opencontainers.image.description="AMD ACT II Track 1 - hybrid local+Fireworks token-efficient agent" \
       org.opencontainers.image.licenses="MIT"
 
 WORKDIR /app
 
-# Runtime deps only: httpx (Fireworks client) + tiktoken (local token estimate).
+# Build llama-cpp-python (CPU) FROM SOURCE with a portable AVX2 baseline
+# (GGML_NATIVE=OFF). Prebuilt wheels are risky: the musllinux wheel won't load on
+# glibc slim, and a -march=native / AVX-512 wheel can pass on the build CPU but
+# crash with an illegal instruction on the grading VM. An explicit AVX2/FMA/F16C
+# build runs on any modern x86-64 (universal on cloud) and links glibc.
+# GGML_OPENMP=OFF -> llama.cpp uses its own pthread pool, so the compiled .so has
+# no libgomp runtime dependency. Build tools are kept (only ~400MB; image stays
+# well under 10GB) so every runtime lib the .so needs is present.
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential cmake \
+ && CMAKE_ARGS="-DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON -DGGML_OPENMP=OFF" \
+      pip install --no-cache-dir "llama-cpp-python==0.3.2" \
+ && pip install --no-cache-dir "huggingface_hub>=0.23" \
+ && rm -rf /var/lib/apt/lists/*
+
+# Bundle the local model weights in the image (downloaded at build time — CI has
+# fast HF network; the grading box never downloads). ~1.9GB, well under the 10GB cap.
+RUN python -c "from huggingface_hub import hf_hub_download; \
+hf_hub_download('Qwen/Qwen2.5-3B-Instruct-GGUF','qwen2.5-3b-instruct-q4_k_m.gguf', local_dir='/models')"
+
 COPY agent/requirements.txt ./agent/requirements.txt
 RUN pip install --no-cache-dir -r agent/requirements.txt
 
@@ -29,18 +50,19 @@ RUN python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
 
 COPY agent ./agent
 
-# USE_LOCAL=0: answer via exact code solvers (free) + Fireworks (accurate). The
-# bundled local model was both failing the accuracy gate AND bloating the image;
-# it is no longer shipped. REMOTE_MODEL is the fallback if the harness injects no
-# ALLOWED_MODELS list; gpt-oss-120b measured clean + cheap.
-# DISABLE_SOLVERS=1 is a TEMPORARY DIAGNOSTIC: force every task through the model
-# so we can tell whether remote calls work at all in the grader (~0% => every call
-# fails; high => model path works). REVERT to 0 after reading the result.
+# USE_LOCAL=1: the local model carries the categories it's reliable on (factual,
+#   sentiment, summarization, ner) for 0 tokens; solvers handle exact math/logic;
+#   Fireworks is only an escalation and, if it's dead in the grader, the router
+#   keeps the local answer instead of an empty one.
+# DISABLE_SOLVERS=0: solvers ON (the earlier =1 was a temporary diagnostic).
+# REMOTE_MODEL is the escalation fallback if the harness injects no ALLOWED_MODELS.
 ENV INPUT_PATH=/input/tasks.json \
     OUTPUT_PATH=/output/results.json \
-    USE_LOCAL=0 \
-    DISABLE_SOLVERS=1 \
+    USE_LOCAL=1 \
+    DISABLE_SOLVERS=0 \
+    LOCAL_MODEL_PATH=/models/qwen2.5-3b-instruct-q4_k_m.gguf \
+    LOCAL_THREADS=0 \
     REASONING_EFFORT=low \
-    REMOTE_MODEL=accounts/fireworks/models/gpt-oss-120b
+    REMOTE_MODEL=accounts/fireworks/models/gemma-4-31b-it
 
 ENTRYPOINT ["python", "-m", "agent.main"]
