@@ -45,9 +45,12 @@ RUN python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
 
 COPY agent ./agent
 
+# USE_LOCAL=0: the bundled 3B model was failing the ACCURACY gate on the hidden
+# set (excluded from the leaderboard). Answer via exact code solvers + Fireworks
+# so we clear the gate; flip back to 1 only once the local model is proven.
 ENV INPUT_PATH=/input/tasks.json \
     OUTPUT_PATH=/output/results.json \
-    USE_LOCAL=1 \
+    USE_LOCAL=0 \
     LOCAL_MODEL_PATH=/models/qwen2.5-3b-instruct-q4_k_m.gguf \
     LOCAL_THREADS=2 \
     LOCAL_SAMPLES_HARD=1 \

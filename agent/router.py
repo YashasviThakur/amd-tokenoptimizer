@@ -71,7 +71,10 @@ def _pick_remote_model(category: str) -> str:
     non-reasoning instruct model (fewest tokens) and a code model for code."""
     models = config.allowed_models
     if not models:
-        return ""
+        # has_remote() may be true off the API key alone (no model list injected).
+        # Fall back to an explicitly preferred model so we still escalate rather
+        # than emit an empty answer (which would fail the accuracy gate).
+        return config.preferred_model
     if config.preferred_model and config.preferred_model in models:
         return config.preferred_model
 

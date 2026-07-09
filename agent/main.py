@@ -199,7 +199,8 @@ def selftest() -> int:
     _write_json(inp, sample)
 
     config.input_path, config.output_path = inp, outp
-    config.allowed_models = []      # force offline: no remote
+    config.allowed_models = []      # force offline: no remote model list
+    config.fireworks_api_key = ""   # ...and no key, so has_remote() is False offline
     config.use_local = False        # solver + contract check only (no model load)
     run()
 
