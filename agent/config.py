@@ -86,8 +86,9 @@ class Config:
     # and answered 8/8 on the real API in our live smoke. gemma/minimax/kimi are
     # ON-DEMAND — a 404 there means "not deployed", not "banned" (organizer note),
     # so leading with them made every remote call die when nothing was deployed.
-    # The router also tries both id spellings (bare + accounts/fireworks/models/…),
-    # so these work against a proxy or the real Fireworks API.
+    # The router sends every id VERBATIM (no bare/prefixed toggling) — an off-list
+    # spelling is a MODEL_VIOLATION — so this fallback fires only when the harness
+    # injects NO list at all, and its entries must already match the proxy's naming.
     fallback_models: list[str] = field(default_factory=lambda: _split(
         "FALLBACK_MODELS",
         "gpt-oss-120b,gpt-oss-20b,gemma-4-31b-it,"

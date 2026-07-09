@@ -79,10 +79,6 @@ def _looks_labeled(ans: str) -> bool:
 _FAMILY_PREF = ("gpt-oss", "gemma", "glm", "deepseek", "qwen", "llama", "mixtral", "phi")
 _DEPRIORITIZE = ("kimi",)
 _SHORT_CATEGORIES = {"sentiment", "math", "factual", "logic"}
-# Always-on serverless models (no deployment, bill only on use) used as a final
-# fallback so a task never dies when the injected/on-demand models 404. Measured
-# 5/5 correct and fast on the real Fireworks API.
-_SERVERLESS_SAFETYNET = ("gpt-oss-120b", "gpt-oss-20b")
 
 
 def _salvage_strong(category: str, s: str) -> bool:
@@ -106,22 +102,6 @@ def _salvage_strong(category: str, s: str) -> bool:
     if category in ("factual", "logic"):
         return 0 < len(s) <= 120
     return False
-
-
-def _id_variants(m: str) -> list[str]:
-    """Both id spellings for the same model, working spelling first. Real Fireworks
-    needs the 'accounts/fireworks/models/<name>' path; a private judging proxy
-    matches the BARE short name verbatim. We can't know which the grader injects,
-    so on a 404 we fail over to the other spelling. A 404 is billed nothing and not
-    retried, so trying the alternate form is essentially free — and it's the
-    difference between every remote call dying (wrong format -> local fallback ->
-    frozen score) and the model actually answering."""
-    m = (m or "").strip()
-    if not m:
-        return []
-    if "/" in m:
-        return [m, m.rsplit("/", 1)[-1]]  # prefixed first, then bare
-    return [m, f"accounts/fireworks/models/{m}"]  # bare first, then prefixed
 
 
 def _candidate_models(category: str) -> list[str]:
@@ -164,27 +144,13 @@ def _candidate_models(category: str) -> list[str]:
         top.append(diverse)
     elif len(ordered) > 2:
         top.append(ordered[2])
-    # Expand each pick into both id spellings (bare + accounts/fireworks/models/…),
-    # working form first. A wrong id FORMAT 404s every call — indistinguishable from
-    # a wrong model — so trying both spellings makes remote work whether the grader
-    # injects a real-Fireworks base_url (needs the prefix) or a short-name proxy.
-    expanded: list[str] = []
-    for m in top:
-        for v in _id_variants(m):
-            if v not in expanded:
-                expanded.append(v)
-    # SERVERLESS SAFETY NET: always keep a known-good always-on model reachable as a
-    # LAST resort, even when an injected ALLOWED_MODELS list is present. If the
-    # injected models are on-demand ones the team never deployed, every call 404s
-    # (fast, billed nothing) and the task would otherwise die (empty answer, or the
-    # slow local-rescue that caused the TIMEOUT). gpt-oss is serverless (no deploy)
-    # and answered 5/5 fast on the real API. Appended LAST + both id spellings, so a
-    # working allowed model always answers first and this only fires on total failure.
-    for m in _SERVERLESS_SAFETYNET:
-        for v in _id_variants(m):
-            if v not in expanded:
-                expanded.append(v)
-    return expanded
+    # Send each pick EXACTLY as the harness injected it — nothing else. The judging
+    # proxy matches ALLOWED_MODELS entries VERBATIM; ANY other model string (a bare/
+    # prefixed re-spelling of an allowed id, or an always-on model not on the list)
+    # makes the WHOLE submission a MODEL_VIOLATION and unscoreable. That is strictly
+    # worse than a task whose model 404s and falls back. So: no id-format toggling,
+    # no serverless safety net — only verbatim allow-list entries. De-dup only.
+    return list(dict.fromkeys(m for m in top if m))
 
 
 def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0,

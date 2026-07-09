@@ -33,14 +33,15 @@ COPY agent ./agent
 # REMOTE_FIRST=1: free solvers first (0 tokens), everything else to Fireworks.
 # USE_LOCAL=0: no bundled model — remote is serverless+fast; the slow CPU tier was
 #   a pure liability (TIMEOUT). A 404'd task emits empty fast instead of hanging.
-# The router always keeps a SERVERLESS safety-net model (gpt-oss) reachable, so an
-#   injected on-demand model that 404s (not deployed) still gets answered.
+# The router calls ONLY the harness-injected ALLOWED_MODELS, each VERBATIM: the
+#   judging proxy matches ids exactly, so any off-list string (a re-spelled id or an
+#   always-on model not on the list) makes the whole submission a MODEL_VIOLATION.
 # REQUEST_TIMEOUT=14 / PER_TASK_BUDGET_S=16 / RUN_DEADLINE_S=300 / MAX_WORKERS=5:
 #   hard time bounds so a slow/hanging grader network can never exceed the 10-min /
 #   30s-per-task limits; main.py adds a +60s hard stop that emits empties for any
 #   unfinished task and always writes a valid results.json.
-# REMOTE_MODEL=gpt-oss-120b: serverless, measured 5/5 correct at ~1s/call; the
-#   router also tries both id spellings (bare + accounts/fireworks/models/<name>).
+# REMOTE_MODEL=gpt-oss-120b: preferred order only — honored solely if it appears
+#   VERBATIM in the injected ALLOWED_MODELS, otherwise silently ignored (never sent).
 ENV INPUT_PATH=/input/tasks.json \
     OUTPUT_PATH=/output/results.json \
     REMOTE_FIRST=1 \
