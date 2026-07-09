@@ -68,17 +68,29 @@ COPY agent ./agent
 # REMOTE_MODEL: preferred pick WITHIN the allowed list (short name, verbatim
 #   launch-day id); non-reasoning gemma = cheapest tokens. If the harness injects
 #   no list at all, config.fallback_models supplies the launch-day five verbatim.
+# USE_LOCAL=0 (was 1): the bundled 3B was a DEAD-REMOTE RESCUE, but on the 2-vCPU
+#   grading box 19 sequential CPU inferences blow the 10-min budget -> TIMEOUT
+#   (observed) whenever remote 404s every call. Remote is now fast+serverless
+#   (gpt-oss ~1s/call) with a serverless safety net, so the slow local tier is a
+#   pure liability. A 404'd task now emits empty FAST (scoreable) instead of hanging.
+# REQUEST_TIMEOUT=14 / PER_TASK_BUDGET_S=16 / RUN_DEADLINE_S=330: hard time bounds
+#   so even a slow/hanging grader network can never exceed the 10-min / 30s-per-task
+#   limits. main.py adds a +60s hard stop that emits empties for anything unfinished.
+# MAX_WORKERS=5 (was 3): finish the batch faster in wall-clock; serverless gpt-oss
+#   tolerates the concurrency (the 429 concern was a private proxy, not the API).
 ENV INPUT_PATH=/input/tasks.json \
     OUTPUT_PATH=/output/results.json \
     REMOTE_FIRST=1 \
-    USE_LOCAL=1 \
+    USE_LOCAL=0 \
     DISABLE_SOLVERS=0 \
     LOCAL_ONLY=0 \
     LOCAL_MODEL_PATH=/models/qwen2.5-3b-instruct-q4_k_m.gguf \
     LOCAL_THREADS=2 \
-    LOCAL_SAMPLES_HARD=2 \
     REASONING_EFFORT= \
-    MAX_WORKERS=3 \
+    REQUEST_TIMEOUT=14 \
+    PER_TASK_BUDGET_S=16 \
+    RUN_DEADLINE_S=330 \
+    MAX_WORKERS=5 \
     MODEL_DISCOVERY=0 \
     REMOTE_MODEL=gpt-oss-120b
 

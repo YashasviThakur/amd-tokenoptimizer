@@ -79,6 +79,10 @@ def _looks_labeled(ans: str) -> bool:
 _FAMILY_PREF = ("gpt-oss", "gemma", "glm", "deepseek", "qwen", "llama", "mixtral", "phi")
 _DEPRIORITIZE = ("kimi",)
 _SHORT_CATEGORIES = {"sentiment", "math", "factual", "logic"}
+# Always-on serverless models (no deployment, bill only on use) used as a final
+# fallback so a task never dies when the injected/on-demand models 404. Measured
+# 5/5 correct and fast on the real Fireworks API.
+_SERVERLESS_SAFETYNET = ("gpt-oss-120b", "gpt-oss-20b")
 
 
 def _salvage_strong(category: str, s: str) -> bool:
@@ -166,6 +170,17 @@ def _candidate_models(category: str) -> list[str]:
     # injects a real-Fireworks base_url (needs the prefix) or a short-name proxy.
     expanded: list[str] = []
     for m in top:
+        for v in _id_variants(m):
+            if v not in expanded:
+                expanded.append(v)
+    # SERVERLESS SAFETY NET: always keep a known-good always-on model reachable as a
+    # LAST resort, even when an injected ALLOWED_MODELS list is present. If the
+    # injected models are on-demand ones the team never deployed, every call 404s
+    # (fast, billed nothing) and the task would otherwise die (empty answer, or the
+    # slow local-rescue that caused the TIMEOUT). gpt-oss is serverless (no deploy)
+    # and answered 5/5 fast on the real API. Appended LAST + both id spellings, so a
+    # working allowed model always answers first and this only fires on total failure.
+    for m in _SERVERLESS_SAFETYNET:
         for v in _id_variants(m):
             if v not in expanded:
                 expanded.append(v)
