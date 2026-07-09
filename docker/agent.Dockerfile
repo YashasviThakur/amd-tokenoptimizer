@@ -80,6 +80,6 @@ ENV INPUT_PATH=/input/tasks.json \
     REASONING_EFFORT= \
     MAX_WORKERS=3 \
     MODEL_DISCOVERY=0 \
-    REMOTE_MODEL=gemma-4-31b-it
+    REMOTE_MODEL=gpt-oss-120b
 
 ENTRYPOINT ["python", "-m", "agent.main"]

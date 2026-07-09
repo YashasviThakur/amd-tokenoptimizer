@@ -82,10 +82,16 @@ class Config:
     # launch-day ALLOWED_MODELS (short names, community-confirmed). Never prefix
     # ids with accounts/fireworks/models/ — the judging proxy matches the
     # allow-list entry verbatim, and a non-listed string is a MODEL_VIOLATION.
+    # SERVERLESS-FIRST: gpt-oss-120b is always-on (no deployment, bills only on use)
+    # and answered 8/8 on the real API in our live smoke. gemma/minimax/kimi are
+    # ON-DEMAND — a 404 there means "not deployed", not "banned" (organizer note),
+    # so leading with them made every remote call die when nothing was deployed.
+    # The router also tries both id spellings (bare + accounts/fireworks/models/…),
+    # so these work against a proxy or the real Fireworks API.
     fallback_models: list[str] = field(default_factory=lambda: _split(
         "FALLBACK_MODELS",
-        "minimax-m3,kimi-k2p7-code,gemma-4-31b-it,"
-        "gemma-4-26b-a4b-it,gemma-4-31b-it-nvfp4"))
+        "gpt-oss-120b,gpt-oss-20b,gemma-4-31b-it,"
+        "minimax-m3,kimi-k2p7-code"))
     # Default OFF for the judging proxy: the field is nonstandard, the allowed
     # gemma-4 models don't use it, and every rejected call costs a second POST
     # (and possibly double-billed prompt tokens gateway-side). Set REASONING_EFFORT

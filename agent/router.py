@@ -104,6 +104,22 @@ def _salvage_strong(category: str, s: str) -> bool:
     return False
 
 
+def _id_variants(m: str) -> list[str]:
+    """Both id spellings for the same model, working spelling first. Real Fireworks
+    needs the 'accounts/fireworks/models/<name>' path; a private judging proxy
+    matches the BARE short name verbatim. We can't know which the grader injects,
+    so on a 404 we fail over to the other spelling. A 404 is billed nothing and not
+    retried, so trying the alternate form is essentially free — and it's the
+    difference between every remote call dying (wrong format -> local fallback ->
+    frozen score) and the model actually answering."""
+    m = (m or "").strip()
+    if not m:
+        return []
+    if "/" in m:
+        return [m, m.rsplit("/", 1)[-1]]  # prefixed first, then bare
+    return [m, f"accounts/fireworks/models/{m}"]  # bare first, then prefixed
+
+
 def _candidate_models(category: str) -> list[str]:
     """Ordered, de-duplicated list of models to TRY (best first). The router fails
     over down this list when a model errors or truncates — the observed 26% was one
@@ -144,7 +160,16 @@ def _candidate_models(category: str) -> list[str]:
         top.append(diverse)
     elif len(ordered) > 2:
         top.append(ordered[2])
-    return top
+    # Expand each pick into both id spellings (bare + accounts/fireworks/models/…),
+    # working form first. A wrong id FORMAT 404s every call — indistinguishable from
+    # a wrong model — so trying both spellings makes remote work whether the grader
+    # injects a real-Fireworks base_url (needs the prefix) or a short-name proxy.
+    expanded: list[str] = []
+    for m in top:
+        for v in _id_variants(m):
+            if v not in expanded:
+                expanded.append(v)
+    return expanded
 
 
 def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0,
