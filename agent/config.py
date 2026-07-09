@@ -87,6 +87,11 @@ class Config:
     # gateway actually serves, and call those. The grader's deployment may host
     # different names than we hardcode; a wrong name 404s every call. On by default.
     model_discovery: bool = os.getenv("MODEL_DISCOVERY", "1").strip().lower() in ("1", "true", "yes")
+    # DIAGNOSTIC ONLY: skip the free code-solvers so EVERY task goes to the model
+    # (gated on a real key being present, so the offline self-test/CI smoke still
+    # answer via solvers). Lets us tell "remote is fully broken in the sandbox"
+    # (~0% score) from "remote works, something else is wrong" (high score).
+    disable_solvers: bool = os.getenv("DISABLE_SOLVERS", "0").strip().lower() in ("1", "true", "yes")
     # Soft wall-clock budget: past this, remaining tasks skip local and go to
     # Fireworks (fast). main.py adds a HARD stop (+60s) that ends the loop and emits
     # empties, so a large/slow hidden set can never blow the 10-min budget (=ZERO).

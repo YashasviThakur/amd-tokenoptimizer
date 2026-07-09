@@ -33,9 +33,13 @@ COPY agent ./agent
 # bundled local model was both failing the accuracy gate AND bloating the image;
 # it is no longer shipped. REMOTE_MODEL is the fallback if the harness injects no
 # ALLOWED_MODELS list; gpt-oss-120b measured clean + cheap.
+# DISABLE_SOLVERS=1 is a TEMPORARY DIAGNOSTIC: force every task through the model
+# so we can tell whether remote calls work at all in the grader (~0% => every call
+# fails; high => model path works). REVERT to 0 after reading the result.
 ENV INPUT_PATH=/input/tasks.json \
     OUTPUT_PATH=/output/results.json \
     USE_LOCAL=0 \
+    DISABLE_SOLVERS=1 \
     REASONING_EFFORT=low \
     REMOTE_MODEL=accounts/fireworks/models/gpt-oss-120b
 

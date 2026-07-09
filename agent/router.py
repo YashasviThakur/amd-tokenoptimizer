@@ -172,8 +172,13 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
     if config.force_remote and config.has_remote():
         return _fireworks(task_id, category, prompt, remote, full_prompt=True, deadline=deadline)
 
-    # 1) free deterministic solvers — 0 tokens, exact
-    solved = free_solve(category, prompt)
+    # 1) free deterministic solvers — 0 tokens, exact.
+    # DIAGNOSTIC: config.disable_solvers forces EVERY task through the model (only
+    # when a real API key is present, so the offline self-test still passes). Used
+    # to isolate whether remote calls work at all in the grader: score ~0% => every
+    # model call is failing; high score => the model path works. Flip back off after.
+    skip_solvers = config.disable_solvers and bool(config.fireworks_api_key)
+    solved = None if skip_solvers else free_solve(category, prompt)
     if solved is not None:
         return {"task_id": task_id, "answer": solved, "route": "local-solver",
                 "category": category, "tokens": 0, "confidence": 1.0}
