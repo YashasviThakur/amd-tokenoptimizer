@@ -55,6 +55,6 @@ ENV INPUT_PATH=/input/tasks.json \
     LOCAL_THREADS=2 \
     LOCAL_SAMPLES_HARD=1 \
     REASONING_EFFORT=low \
-    REMOTE_MODEL=accounts/fireworks/models/gemma-4-31b-it
+    REMOTE_MODEL=accounts/fireworks/models/gpt-oss-120b
 
 ENTRYPOINT ["python", "-m", "agent.main"]

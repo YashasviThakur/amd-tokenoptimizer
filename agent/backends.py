@@ -6,11 +6,24 @@ are the score. Both expose the same .chat() signature so the router is agnostic.
 """
 from __future__ import annotations
 
+import re
 import time
 
 import httpx
 
 from .tokens import count_messages, count_tokens
+
+_THINK = re.compile(r"<think>.*?</think>", re.S | re.I)
+
+
+def _clean_answer(text: str) -> str:
+    """Strip any inline reasoning trace some models emit before the answer.
+
+    Well-behaved reasoning models put the trace in a separate `reasoning_content`
+    field and leave `content` clean, but a few emit a <think>...</think> block
+    inline. Remove it so the judge sees only the answer (an unstripped trace is
+    scored as a wrong answer)."""
+    return _THINK.sub("", text or "").strip()
 
 
 class RemoteMeter:
@@ -76,7 +89,7 @@ class Model:
                     raise
                 time.sleep(0.5)
 
-        texts = [c["message"]["content"] for c in data["choices"]]
+        texts = [_clean_answer(c["message"].get("content")) for c in data["choices"]]
         if self.meter is not None:
             usage = data.get("usage") or {}
             pt = usage.get("prompt_tokens")

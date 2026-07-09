@@ -82,8 +82,10 @@ def _pick_remote_model(category: str) -> str:
         return next((m for m in models if sub in m.lower()), None)
 
     if category in ("code_gen", "code_debug"):
-        return find("code") or find("gemma") or models[0]
-    return find("gemma") or models[0]
+        return find("code") or find("gpt-oss") or find("gemma") or models[0]
+    # gpt-oss returned clean answers at ~3x fewer tokens than the reasoning-heavy
+    # alternatives (deepseek/glm/kimi) in measurement, so prefer it when allowed.
+    return find("gpt-oss") or find("gemma") or models[0]
 
 
 def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0) -> dict:

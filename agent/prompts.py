@@ -9,18 +9,25 @@ from __future__ import annotations
 # not targets — a model stops when it's done, so a high ceiling costs nothing on
 # a short answer but prevents a *reasoning* model from having its answer starved
 # (the reasoning trace consumes budget before the final answer is emitted).
+# max_tokens is a CEILING (truncation guard), not a target — a model stops when
+# done, so a high ceiling costs nothing on a short answer. But the models the
+# harness allows are *reasoning* models: they emit a reasoning trace (billed as
+# completion tokens) BEFORE the final answer. At 128 the trace fills the whole
+# budget and the answer is truncated away (finish_reason=length) -> judged wrong,
+# which is exactly what failed the accuracy gate at 15.8%. These ceilings give the
+# reasoning room to finish; cheap models (gpt-oss) still stop in ~25-70 tokens.
 POLICY = {
-    "factual":       ("Answer correctly and concisely. Output only the answer, no preamble.", 128),
-    "math":          ("Solve the problem. Output only the final numeric answer, nothing else.", 128),
-    "sentiment":     ("Classify the sentiment. Reply with exactly one word: positive, negative, or neutral.", 64),
-    "summarization": ("Summarize as instructed, honoring any length constraint. Output only the summary.", 160),
+    "factual":       ("Answer correctly and concisely. Output only the answer, no preamble.", 256),
+    "math":          ("Solve the problem. Output only the final numeric answer, nothing else.", 512),
+    "sentiment":     ("Classify the sentiment. Reply with exactly one word: positive, negative, or neutral.", 256),
+    "summarization": ("Summarize as instructed, honoring any length constraint. Output only the summary.", 384),
     "ner":           ('Extract named entities. Output ONLY minified JSON with keys '
-                      '"person","org","location","date" (each a list of strings).', 192),
+                      '"person","org","location","date" (each a list of strings).', 384),
     "code_debug":    ("Fix the bug. Output only the corrected code, no explanation.", 1024),
-    "logic":         ("Solve the puzzle. Reason internally, then output only the final answer.", 128),
+    "logic":         ("Solve the puzzle. Reason internally, then output only the final answer.", 512),
     "code_gen":      ("Write the function to spec. Output only the code, no explanation.", 1024),
 }
-DEFAULT = ("Answer correctly and concisely. Output only the answer.", 128)
+DEFAULT = ("Answer correctly and concisely. Output only the answer.", 256)
 
 
 def system_for(category: str) -> str:
@@ -38,17 +45,21 @@ def build_messages(category: str, prompt: str) -> list[dict]:
     ]
 
 
-# Ultra-short system prompts for *remote* calls — the task text already describes
-# itself, so we only nudge the output format. Every saved prompt token is score.
+# Short system prompts for *remote* calls. These are reasoning models, so the
+# instruction must be explicit ("give ONLY the final answer") — terse cues like
+# "Number only." made the model dump its reasoning into the answer field instead
+# of a separate channel, which then truncated. "final answer" wording keeps the
+# reasoning out of the content and the answer clean. Every prompt token is score,
+# so they stay as short as possible while still forcing clean output.
 REMOTE_SYSTEM = {
-    "factual": "Answer only.",
-    "math": "Number only.",
-    "sentiment": "One word: positive, negative, or neutral.",
-    "summarization": "Summary only.",
-    "ner": "Minified JSON only.",
-    "code_debug": "Corrected code only.",
-    "code_gen": "Code only.",
-    "logic": "Answer only.",
+    "factual": "Give ONLY the final answer, no explanation.",
+    "math": "Give ONLY the final numeric answer, nothing else.",
+    "sentiment": "Reply with ONLY one word: positive, negative, or neutral.",
+    "summarization": "Output ONLY the summary, no preamble.",
+    "ner": 'Output ONLY minified JSON: {"person":[],"org":[],"location":[],"date":[]}.',
+    "code_debug": "Output ONLY the corrected code, no explanation.",
+    "code_gen": "Output ONLY the code, no explanation.",
+    "logic": "Give ONLY the final answer, no explanation.",
 }
 
 
