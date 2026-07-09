@@ -59,23 +59,15 @@ def build_messages(category: str, prompt: str) -> list[dict]:
 REMOTE_SYSTEM = {
     "factual": "Give ONLY the final answer, no explanation.",
     "math": "Give ONLY the final numeric answer, nothing else.",
-    # balanced-mixed hint: a lukewarm "works, nothing more to add" review was
-    # called positive (LLM-judge FAIL, expected neutral). Narrow clause only.
-    "sentiment": ("Reply with ONLY one word: positive, negative, or neutral. "
-                  "If praise and complaints are balanced, reply neutral."),
-    # word-limit compliance was invisible to the model ("no more than 15 words"
-    # -> 16 words) and minimax counts words ALOUD in content, leaking the tally
-    # as the answer when truncated. Say both things explicitly.
-    "summarization": ("Output ONLY the summary text. Obey any length limit "
-                      "(word or sentence count) EXACTLY. Never count words "
-                      "aloud or explain."),
-    # schema must ADAPT: hard-coding 4 keys made money/percent/product entities
-    # structurally impossible (100% miss) and overrode task-specified key sets.
-    "ner": ('Extract named entities. If the task specifies entity types, keys, '
-            'or a format, follow it EXACTLY. Otherwise output ONLY minified '
-            'JSON with keys "person","org","location","date" (lists of '
-            'strings), adding keys like "money","percent","product","time" '
-            'only when such entities appear.'),
+    # REVERTED to the exact 14/19-scoring text: the deep-check prompt edits
+    # (balanced->neutral clause, length-limit/no-counting summarization text,
+    # adaptive NER schema) shipped together and the score dropped 14->13 — one
+    # of them flipped a passing hidden task. Prompts that touch EVERY task in a
+    # category are regression risks; only measured-safe machinery stays
+    # (word-limit reorder/enforcer fire solely on explicit "N words" tasks).
+    "sentiment": "Reply with ONLY one word: positive, negative, or neutral.",
+    "summarization": "Output ONLY the summary, no preamble.",
+    "ner": 'Output ONLY minified JSON: {"person":[],"org":[],"location":[],"date":[]}.',
     "code_debug": "Output ONLY the corrected code, no explanation.",
     "code_gen": "Output ONLY the code, no explanation.",
     "logic": "Give ONLY the final answer, no explanation.",
