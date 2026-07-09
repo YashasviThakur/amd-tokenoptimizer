@@ -12,7 +12,7 @@ import sys
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
-from .backends import LocalModel, Model, RemoteMeter, strip_code_fence
+from .backends import LocalModel, Model, RemoteMeter, normalize_answer, strip_code_fence
 from .config import config
 from .router import route
 
@@ -209,6 +209,12 @@ def run() -> dict:
                 ans = _answer_str(r.get("answer"))
                 if r.get("category") in ("code_debug", "code_gen"):
                     ans = strip_code_fence(ans)  # raw code — the grader execs/matches it, ``` fences fail
+                else:
+                    ans = normalize_answer(ans)  # typographic unicode breaks string-match judges
+                    if ans.startswith("```"):
+                        # misclassified code task ("Write a program..." routed factual):
+                        # the answer is still code — fences must go regardless of category
+                        ans = strip_code_fence(ans)
                 results[i] = {"task_id": str(r.get("task_id")), "answer": ans}
                 meta[i] = {"task_id": r.get("task_id"), "route": r.get("route"),
                            "category": r.get("category"), "confidence": r.get("confidence"),
@@ -266,6 +272,11 @@ def selftest() -> int:
         # subtraction, and a REVERSE discount must defer (forward formula = wrong)
         {"task_id": "st9", "prompt": "How many years did World War I last, from 1914-1918?"},
         {"task_id": "st10", "prompt": "After a 20% discount, a shirt costs $40. What was the original price?"},
+        # wrong-question misfire regressions (verified live): savings vs sale
+        # price, ordinal ordering, and "write a program" misrouted to math
+        {"task_id": "st11", "prompt": "A jacket costs $80 and is discounted by 25%. How much money do you save?"},
+        {"task_id": "st12", "prompt": "Alice is taller than Bob. Bob is taller than Carol. Who is the second tallest?"},
+        {"task_id": "st13", "prompt": "Write a program to calculate the factorial of 5."},
     ]
     d = tempfile.mkdtemp()
     inp, outp = os.path.join(d, "tasks.json"), os.path.join(d, "results.json")
@@ -280,7 +291,7 @@ def selftest() -> int:
     try:
         out = json.loads(open(outp, encoding="utf-8").read())
         by = {o["task_id"]: o["answer"] for o in out}
-        ok = (isinstance(out, list) and len(out) == 10
+        ok = (isinstance(out, list) and len(out) == 13
               and all(isinstance(o.get("task_id"), str) and isinstance(o.get("answer"), str) for o in out)
               and "144" in by["st1"]
               and "carol" in by["st2"].lower()
@@ -291,7 +302,10 @@ def selftest() -> int:
               and "maya" in by["st7"].lower()             # race ordering (ahead of / won)
               and "25" in by["st8"]                       # profit percentage
               and by["st9"].strip() == ""                 # year range: no -4 misfire
-              and by["st10"].strip() == "")               # reverse discount: deferred
+              and by["st10"].strip() == ""                # reverse discount: deferred
+              and by["st11"].strip() == "20"              # SAVINGS asked, not sale price
+              and by["st12"].strip().lower() == "bob"     # ordinal: SECOND tallest
+              and by["st13"].strip() == "")               # "write a program" != math solver
     except Exception as e:
         print(f"[selftest] FAIL: {e}")
         return 1

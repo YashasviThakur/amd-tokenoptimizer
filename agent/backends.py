@@ -103,6 +103,25 @@ def strip_code_fence(text: str) -> str:
     return (text or "").strip()
 
 
+# Typographic unicode the models emit -> plain ASCII the judge expects. Measured on
+# real answers: gpt-oss wrote 'Lake Burley Griffin' (NARROW NO-BREAK SPACE)
+# and 'record‑low' (NON-BREAKING HYPHEN) — a judge doing contains("Lake Burley
+# Griffin") on the raw string misses those, turning a CORRECT answer into a fail.
+# Mapping is meaning-preserving (same visible text), applied to non-code answers only
+# (code bytes must stay exactly as generated).
+_UNICODE_ASCII = str.maketrans({
+    " ": " ", " ": " ", " ": " ", " ": " ", " ": " ",
+    "‑": "-", "‒": "-", "–": "-", "—": "-", "−": "-",
+    "‘": "'", "’": "'", "“": '"', "”": '"',
+    "​": "", "﻿": "",
+})
+
+
+def normalize_answer(text: str) -> str:
+    """ASCII-normalize typographic unicode in a final (non-code) answer."""
+    return (text or "").translate(_UNICODE_ASCII).strip()
+
+
 def _after_marker(t: str) -> str:
     """The text after the LAST 'answer/final answer' marker (reasoning restates
     before concluding, so the last one is the conclusion)."""

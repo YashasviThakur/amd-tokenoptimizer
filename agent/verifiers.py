@@ -47,7 +47,11 @@ def try_arithmetic(prompt: str) -> str | None:
     if m:
         # only trust "X% of Y" when it IS the whole computation: exactly two
         # numbers and no trailing operator (else "20% of 50 plus 5" would wrongly
-        # return 10). A compound percent expression defers to the model.
+        # return 10), and no WORD modifier wrapping it ("HALF of 20% of 50",
+        # "TWICE 10% of 40" — verified misfires: the digit-count guard alone let
+        # them through). A compound percent expression defers to the model.
+        if re.search(r"\b(?:half|twice|double|doubled|triple|thrice|quarter|third)\b", p):
+            return None
         two_nums = len(re.findall(r"\d+(?:\.\d+)?", p)) == 2
         if two_nums and not re.search(r"[\+\-\*/]\s*\d", p[m.end():]):
             return _fmt(float(m.group(1)) / 100.0 * float(m.group(2)))

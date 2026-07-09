@@ -204,10 +204,16 @@ def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0
                             "confidence": round(conf, 3), "model": model}
                 # Empty/weak content: the answer is in the reasoning trace (reasoning
                 # model). Extract it PER-CATEGORY (a category-blind grab was the
-                # sentiment/summarization/code gate failure).
+                # sentiment/summarization/code gate failure). BUT a trace cut off by
+                # finish=length is MID-COMPUTATION — extraction grabs a plausible-
+                # looking fragment ("...then take 8% of" -> '8'), so on a first-try
+                # truncation we fall through to the higher-ceiling retry (written for
+                # exactly this case) instead of returning the fragment immediately;
+                # the fragment is kept below only as a better-than-empty floor.
                 salvage = (extract_final(category, reasoning).strip() if reasoning
                            else (out[0].get("salvage") or "").strip())
-                if not ans and salvage and _salvage_strong(category, salvage):
+                if (not ans and salvage and _salvage_strong(category, salvage)
+                        and not (truncated and mt == max_tok)):
                     return {"task_id": task_id, "answer": salvage, "route": "remote-reasoning",
                             "category": category, "tokens": remote.meter.total - before,
                             "confidence": round(conf, 3), "model": model}

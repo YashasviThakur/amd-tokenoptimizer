@@ -21,9 +21,16 @@ HARD = {"math", "logic", "code_debug", "code_gen"}
 
 _CODE_HINT = re.compile(r"```|def |class |function |\bcode\b|python|javascript|java\b|c\+\+")
 _CODE_BLOCK = re.compile(r"\bdef\s+\w+\s*\(|```|\bclass\s+\w+\s*[:(]")
+# "program"/"script" included: "Write a PROGRAM to calculate the factorial of 5"
+# classified as math and the solver answered '120' instead of code (verified
+# misfire). The words only count inside an explicit write/implement/create
+# phrase, so prose like "TV program" or "training program" can't trigger it.
 _WANTS_CODE = re.compile(
-    r"write (?:a |me a |the )?(?:python )?function|write python|write code|"
-    r"implement (?:a |the )?function|create (?:a |the )?function|generate (?:a )?function"
+    r"write (?:a |me a |the )?(?:python |short |simple )?(?:function|program|script|code)|"
+    r"write python|write code|"
+    r"implement (?:a |the )?(?:python )?(?:function|program|script)|"
+    r"create (?:a |the )?(?:python )?(?:function|program|script)|"
+    r"generate (?:a )?(?:python )?(?:function|program|script)"
 )
 _COMPARATIVE = re.compile(
     r"\b(older|younger|taller|shorter|faster|slower|bigger|smaller|heavier|lighter"

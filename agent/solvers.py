@@ -70,7 +70,18 @@ def solve_ordering(prompt: str) -> str | None:
     clauses = re.findall(r"\b(?:who|which)\b([^?.!\n]*)", prompt.lower())
     if not clauses:
         return None
-    qwords = set(re.findall(r"[a-z]+", clauses[-1]))
+    qwords = set(re.findall(r"[a-z0-9]+", clauses[-1]))
+    # ordinal questions ("who is the SECOND tallest?"): the bag-of-words intent
+    # match is blind to them, so the old code returned the MAXIMUM for "second
+    # tallest" — a confident wrong answer. Second/third are provable from the
+    # unique total order (handled below); deeper ordinals/middle defer.
+    ordinal = None
+    if {"second", "2nd"} & qwords:
+        ordinal = 2
+    elif {"third", "3rd"} & qwords:
+        ordinal = 3
+    elif {"middle", "fourth", "4th", "fifth", "5th", "median"} & qwords:
+        return None
     attr = want_max = want_min = None
     for a in _ATTRS:
         hi, lo = bool(qwords & a["max"]), bool(qwords & a["min"])
@@ -120,7 +131,13 @@ def solve_ordering(prompt: str) -> str | None:
     score = {n: len(_reach(adj, n)) for n in names}
     if sorted(score.values()) != list(range(len(names))):
         return None
-    return max(score, key=score.get) if want_max else min(score, key=score.get)
+    ranked = sorted(names, key=score.get)  # ascending: [min ... max]
+    if ordinal:
+        if len(ranked) < ordinal:
+            return None
+        # provable from the unique total order: "second tallest" = ranked[-2]
+        return ranked[-ordinal] if want_max else ranked[ordinal - 1]
+    return ranked[-1] if want_max else ranked[0]
 
 
 _PROP_VERB = (r"(?:need|needs|require|requires|have|has|can|absorb|absorbs|"
@@ -224,7 +241,15 @@ def solve_math_word(prompt: str) -> str | None:
                 and len(re.findall(r"\d+(?:\.\d+)?\s*%", p)) == 1
                 and len(amounts) <= 1
                 and price.group(1) != disc.group(1)):
-            return _fmt(float(price.group(1)) * (1 - float(disc.group(1)) / 100.0))
+            base, d = float(price.group(1)), float(disc.group(1))
+            # answer WHAT IS ASKED: "how much do you save / what is the discount
+            # in dollars / how much less" wants the SAVINGS (price*d%), not the
+            # sale price — the old code always returned the sale price, a
+            # confident wrong answer on savings phrasings (verified misfire).
+            if re.search(r"\bsav(?:e|ed|ing|ings)\b|how much less|"
+                         r"discount (?:amount|in dollars)|taken off|comes? off", p):
+                return _fmt(base * d / 100.0)
+            return _fmt(base * (1 - d / 100.0))
 
     if "speed" in p:
         m = re.search(r"(\d+(?:\.\d+)?)\s*(?:km|kilometers|miles|meters|m)\b.*?\bin\s+"
@@ -250,8 +275,11 @@ def solve_math_word(prompt: str) -> str | None:
             if cost and "loss" in p and cost >= sell:
                 return _fmt((cost - sell) / cost * 100.0)
 
-    # reverse percent change: "increased by 40% becomes 70" -> 70 / 1.40 = 50
-    if len(re.findall(r"\d+(?:\.\d+)?", p)) == 2:
+    # reverse percent change: "increased by 40% becomes 70" -> 70 / 1.40 = 50.
+    # ONLY when the ORIGINAL value is asked — "by how much/many did it increase"
+    # wants the DELTA, and the old code returned the original (verified misfire).
+    if len(re.findall(r"\d+(?:\.\d+)?", p)) == 2 \
+            and not re.search(r"by how (?:much|many)", p):
         m = re.search(r"(?:increased|grew|rose|raised|went up)\s+by\s+(\d+(?:\.\d+)?)\s*%"
                       r".*?(?:becomes?|is now|equals?|is|to)\s+(\d+(?:\.\d+)?)", p)
         if m:
@@ -281,10 +309,14 @@ def solve_math_extra(prompt: str) -> str | None:
         if v.is_integer() and 0 <= v <= 20:
             return str(math.factorial(int(v)))  # exact int, no float rounding
 
-    # N to the power of M / N raised to (the power of) M (exactly two numbers)
-    m = re.search(r"(\d+(?:\.\d+)?)\s+(?:to the power(?: of)?|raised to(?: the power(?: of)?)?)\s+"
+    # N to the power of M / N raised to (the power of) M (exactly two numbers).
+    # A NEGATIVE base defers: the sign was silently dropped ("-2 to the power of
+    # 3" -> 8, verified misfire), and "(-2)^2 vs -(2^2)" is ambiguous in prose.
+    m = re.search(r"(-?\d+(?:\.\d+)?)\s+(?:to the power(?: of)?|raised to(?: the power(?: of)?)?)\s+"
                   r"(-?\d+(?:\.\d+)?)", p)
     if m and len(nums) == 2:
+        if m.group(1).startswith("-") or re.search(r"\b(?:minus|negative)\b", p):
+            return None
         return _fmt(float(m.group(1)) ** float(m.group(2)))
 
     # single-operand ops: squared / cubed / square root / cube root
