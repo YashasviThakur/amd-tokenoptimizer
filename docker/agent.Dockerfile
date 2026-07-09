@@ -40,8 +40,10 @@ COPY agent ./agent
 #   hard time bounds so a slow/hanging grader network can never exceed the 10-min /
 #   30s-per-task limits; main.py adds a +60s hard stop that emits empties for any
 #   unfinished task and always writes a valid results.json.
-# REMOTE_MODEL=gpt-oss-120b: preferred order only — honored solely if it appears
-#   VERBATIM in the injected ALLOWED_MODELS, otherwise silently ignored (never sent).
+# NO REMOTE_MODEL / ALLOWED_MODELS baked in: the router must call ONLY the models the
+#   grader injects, VERBATIM. Baking a preferred id (gpt-oss-120b) merged it into the
+#   resolved allow-list and got it called first -> MODEL_VIOLATION when the grader's
+#   list didn't include it. The grader supplies the model list at eval; we never guess.
 ENV INPUT_PATH=/input/tasks.json \
     OUTPUT_PATH=/output/results.json \
     REMOTE_FIRST=1 \
@@ -53,7 +55,6 @@ ENV INPUT_PATH=/input/tasks.json \
     PER_TASK_BUDGET_S=16 \
     RUN_DEADLINE_S=300 \
     MAX_WORKERS=5 \
-    MODEL_DISCOVERY=0 \
-    REMOTE_MODEL=gpt-oss-120b
+    MODEL_DISCOVERY=0
 
 ENTRYPOINT ["python", "-m", "agent.main"]

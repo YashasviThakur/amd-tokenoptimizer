@@ -20,10 +20,17 @@ def _split(name: str, default: str = "") -> list[str]:
 # The harness may name the allowed-model list differently. Read every plausible
 # env var so the Fireworks path is never silently disabled by a naming mismatch
 # (an empty allow-list made has_remote() False -> zero API calls -> gate failure).
+# Allow-list SOURCES only. REMOTE_MODEL is deliberately NOT here: it is a PREFERENCE
+# hint (read into preferred_model below), not a statement that the model is allowed.
+# Listing it merged our own REMOTE_MODEL default into config.allowed_models, so the
+# router called an id the grader never allowed -> MODEL_VIOLATION (the whole
+# submission unscoreable). A preference must only REORDER the injected list, never
+# extend it.
 _MODEL_ENV_PRIORITY = ("ALLOWED_MODELS", "MODELS", "FIREWORKS_MODELS", "MODEL_NAME",
-                       "MODEL", "FIREWORKS_MODEL", "LLM_MODEL", "REMOTE_MODEL")
-# our OWN config vars that contain "MODEL" but never hold a harness model id
-_MODEL_ENV_OWN = ("MODEL_DISCOVERY", "LOCAL_MODEL_PATH", "FALLBACK_MODELS")
+                       "MODEL", "FIREWORKS_MODEL", "LLM_MODEL")
+# our OWN config vars that contain "MODEL" but never hold a harness allow-list id
+# (REMOTE_MODEL included: it is a preference, so the generic sweep must skip it too).
+_MODEL_ENV_OWN = ("MODEL_DISCOVERY", "LOCAL_MODEL_PATH", "FALLBACK_MODELS", "REMOTE_MODEL")
 # a model id: no spaces, path-ish charset, and at least one letter + 3 chars —
 # rejects flag values like "0"/"1"/"true" leaking in from boolean *MODEL* vars.
 _MODEL_ID = re.compile(r"^(?=.{3,})(?=.*[A-Za-z])[\w./:-]+$")
