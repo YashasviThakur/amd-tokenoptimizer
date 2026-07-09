@@ -156,6 +156,43 @@ def _candidate_models(category: str) -> list[str]:
     return list(dict.fromkeys(m for m in top if m))
 
 
+# Categories where a single sample can slip on a judgment call (multi-step
+# reasoning, ambiguous labels) and answers normalize into comparable keys.
+_VOTE_CATEGORIES = {"math", "logic", "sentiment"}
+
+
+def _final_line(category: str, ans: str) -> str:
+    """Keep only the 'FINAL: …' line of a CoT answer (math/logic); else as-is."""
+    if ans and category in ("math", "logic") and "FINAL:" in ans:
+        tail = ans.rsplit("FINAL:", 1)[-1].strip()
+        if tail:
+            return tail.splitlines()[0].strip()
+    return ans
+
+
+def _vote_refine(remote, model, msgs, category, max_tok, anchor, time_left) -> str:
+    """Anchor-safe majority vote: draw TWO hot samples; only when BOTH agree with
+    each other AND against the deterministic temp-0 anchor do they override it.
+    Every failure mode (timeout, error, proxy ignoring n>1, disagreement, tie)
+    returns the anchor unchanged — this can only replace the answer on 2-vs-1
+    evidence, never degrade it to a single hot sample."""
+    if time_left is not None and time_left < 8.0:
+        return anchor
+    try:
+        outs = remote.chat(model, msgs, max_tokens=max_tok, temperature=0.8, n=2,
+                           reasoning_effort=config.reasoning_effort,
+                           timeout=min(time_left, config.request_timeout) if time_left else None)
+    except Exception:
+        return anchor
+    samples = [_final_line(category, (o.get("text") or "").strip())
+               for o in outs if o.get("finish") != "length"]
+    samples = [s for s in samples if s]
+    if (len(samples) == 2 and _norm(samples[0]) == _norm(samples[1])
+            and _norm(samples[0]) != _norm(anchor)):
+        return samples[0]
+    return anchor
+
+
 def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0,
                deadline: float | None = None, local_fallback: str = "") -> dict:
     """Escalate to Fireworks, failing over across candidate models until one returns
@@ -201,17 +238,14 @@ def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0
                 msgs = messages if full_prompt else build_remote_messages(category, prompt, model)
                 out = remote.chat(model, msgs, max_tokens=mt, temperature=0.0, n=1,
                                   reasoning_effort=config.reasoning_effort, timeout=call_timeout)
-                ans = (out[0].get("text") or "").strip()
-                if ans and category in ("math", "logic") and "FINAL:" in ans:
-                    # CoT answer: keep only the marked final line (the reasoning
-                    # stays out of the submitted answer)
-                    tail = ans.rsplit("FINAL:", 1)[-1].strip()
-                    if tail:
-                        ans = tail.splitlines()[0].strip()
+                # CoT answers keep only the marked FINAL line (reasoning stays out)
+                ans = _final_line(category, (out[0].get("text") or "").strip())
                 finish = out[0].get("finish")
                 reasoning = out[0].get("reasoning") or ""
                 truncated = finish == "length"
                 if ans and not truncated:  # good clean answer — done
+                    if category in _VOTE_CATEGORIES and not full_prompt:
+                        ans = _vote_refine(remote, model, msgs, category, mt, ans, _time_left())
                     return {"task_id": task_id, "answer": ans, "route": "remote",
                             "category": category, "tokens": remote.meter.total - before,
                             "confidence": round(conf, 3), "model": model}
