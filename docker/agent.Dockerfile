@@ -1,13 +1,14 @@
-# Track-1 submission image — token-efficient hybrid agent (local-first).
+# Track-1 submission image — token-efficient agent (remote-first, gate-pass).
 #
-# Strategy: answer as much as possible for ZERO Fireworks tokens — with plain
-# deterministic code solvers AND a bundled local model — and use Fireworks only as
-# an optional escalation for the hard tasks a small model can't be trusted on.
-# Local inference is free (0 tokens = best score) AND immune to any Fireworks
-# access/credit problems in the grading sandbox: if the injected Fireworks key is
-# dead, the local model still answers (the router keeps the local answer rather
-# than emitting an empty one). Grading box = 4GB RAM / 2 vCPU, so a 2-3B 4-bit
-# model fits comfortably; the image stays well under the 10GB cap.
+# Strategy: free deterministic solvers answer what they can prove (0 tokens);
+# every remaining task goes to the cheapest allowed Fireworks model with a minimal
+# prompt — the profile of all four gate-passing leaderboard agents (each 84.2%).
+# The bundled local model is a DEAD-REMOTE RESCUE only: if the grader's Fireworks
+# access fails, the router answers locally rather than emitting an empty string
+# (a local answer is sometimes right; an empty one is always wrong). Local-first
+# was tried and failed the accuracy gate (the 3B's format-only confidence gates
+# keep wrong-but-well-formed answers). Grading box = 4GB RAM / 2 vCPU, so a 2-3B
+# 4-bit model fits comfortably; the image stays well under the 10GB cap.
 #
 #   docker buildx build --platform linux/amd64 \
 #     -f docker/agent.Dockerfile -t <registry>/tokenoptimizer-agent:latest --push .
