@@ -38,22 +38,62 @@ def _clean_answer(text: str) -> str:
     return t.strip()
 
 
-def _extract_message_text(choice: dict) -> str:
-    """Pull the answer text out of one choice, defensively across gateway shapes:
-    OpenAI `message.content` (str), a content PARTS list ([{type,text},...]), the
-    `reasoning_content` channel when content is empty, or a legacy `text` field."""
+def _extract_message_text(choice: dict) -> tuple[str, str]:
+    """Pull (answer_text, reasoning_trace) out of one choice, defensively across
+    gateway shapes: OpenAI `message.content` (str), a content PARTS list
+    ([{type,text},...]), or a legacy `text` field. The `reasoning_content`
+    channel is returned SEPARATELY and never as the answer: submitting a raw
+    reasoning trace as the answer is judged wrong every time — that (empty
+    content + trace-only responses at our old caps) reproduced the 26.3% run
+    exactly in gateway simulation."""
     msg = choice.get("message") or {}
     content = msg.get("content")
     if isinstance(content, list):  # content-parts array (a real OpenAI variant)
         content = "".join(p.get("text", "") for p in content if isinstance(p, dict))
     if not (isinstance(content, str) and content.strip()):
-        # content empty/absent -> the answer may be in the reasoning channel, or
-        # a completions-style `text` field.
-        alt = msg.get("reasoning_content")
-        if not (isinstance(alt, str) and alt.strip()):
-            alt = choice.get("text")
+        alt = choice.get("text")  # completions-style field
         content = alt if isinstance(alt, str) else ""
-    return _clean_answer(content)
+    reasoning = msg.get("reasoning_content")
+    return _clean_answer(content), (reasoning if isinstance(reasoning, str) else "")
+
+
+_ANSWER_MARK = re.compile(r"(?:final answer|the answer is|answer)\s*[:\-]?\s*(.+?)\s*$",
+                          re.I | re.M)
+
+
+def _salvage_answer(trace: str) -> str:
+    """Best-effort FINAL ANSWER pulled from a reasoning trace — used only as a
+    last-resort floor when every retry/failover still returned no clean content.
+    A short extracted answer is sometimes right; the raw trace never is."""
+    t = _THINK.sub("", trace or "").strip()
+    if not t:
+        return ""
+    m = None
+    for m in _ANSWER_MARK.finditer(t):
+        pass  # keep the LAST marker (reasoning often restates before concluding)
+    if m and m.group(1).strip():
+        cand = m.group(1).strip()
+        if len(cand) <= 200:
+            return cand
+    lines = [ln.strip() for ln in t.splitlines() if ln.strip()]
+    last = lines[-1] if lines else ""
+    return last if 0 < len(last) <= 160 else ""
+
+
+def _fold_system(messages: list[dict]) -> list[dict]:
+    """Merge any system message into the first user turn. The Track-1 allowed
+    models are mostly gemma-4, whose chat template can REJECT the system role
+    outright through the judging proxy (competitor-confirmed failure + fix); a
+    single user message is accepted by every model and costs the same tokens."""
+    sys_txt = "\n".join(m.get("content", "") for m in messages
+                        if m.get("role") == "system").strip()
+    rest = [m for m in messages if m.get("role") != "system"]
+    if not sys_txt:
+        return messages
+    if rest and rest[0].get("role") == "user":
+        merged = {**rest[0], "content": f"{sys_txt}\n\n{rest[0].get('content', '')}"}
+        return [merged] + rest[1:]
+    return [{"role": "user", "content": sys_txt}] + rest
 
 
 class RemoteMeter:
@@ -120,12 +160,16 @@ class Model:
     def chat(self, model: str, messages: list[dict], max_tokens: int = 128,
              temperature: float = 0.0, n: int = 1, reasoning_effort: str | None = None,
              timeout: float | None = None) -> list[dict]:
-        """One chat-completion call. Returns [{"text": <clean answer>, "finish":
-        <finish_reason>}] — the router uses `finish` to detect truncation and fail
-        over. Raises RecoverableResponseError for any MODEL-specific failure (5xx,
-        4xx, error body, no choices) so the router can try the next allowed model;
+        """One chat-completion call. Returns [{"text": <clean answer or "">,
+        "finish": <finish_reason>, "salvage": <answer extracted from a reasoning
+        trace, only when text is empty>}] — the router uses `finish` to detect
+        truncation and fail over, and `salvage` only as a last-resort floor.
+        Raises RecoverableResponseError for any MODEL-specific failure (5xx, 4xx,
+        error body, no choices) so the router can try the next allowed model;
         raises httpx errors only for genuine transport problems."""
-        payload = {"model": model, "messages": messages,
+        # System role folded into the user turn on EVERY remote call (gemma-4
+        # template safety, see _fold_system).
+        payload = {"model": model, "messages": _fold_system(messages),
                    "max_tokens": max_tokens, "temperature": temperature}
         if n > 1:
             payload["n"] = n
@@ -136,20 +180,30 @@ class Model:
         post_kw = {"json": payload}
         if timeout is not None:
             post_kw["timeout"] = timeout
-        # Retry once ONLY on a fast transport blip (connect/pool). A ReadTimeout is
-        # NOT retried (a slow model won't be faster on retry, and it doubles wall
-        # time). A model-specific failure (5xx / 4xx / error body) is NOT retried
-        # either — it's raised as RecoverableResponseError so the router fails over
-        # to the NEXT allowed model, which is what actually rescues the task.
+        # Retry policy:
+        #  * transport blip (connect/pool)  -> one fast retry (0.5s)
+        #  * 429 / 5xx                      -> one retry after a real backoff; the
+        #    judging proxy rate-limits bursts, and a 429 with no backoff turned
+        #    whole batches into fallback answers for other teams
+        #  * ReadTimeout                    -> NOT retried (a slow model won't be
+        #    faster on retry; it doubles wall time)
+        #  * other 4xx / error body         -> RecoverableResponseError so the
+        #    router fails over to the NEXT allowed model
         data = None
         for attempt in range(2):
             try:
                 r = self._client.post(url, **post_kw)
-                if 400 <= r.status_code < 500 and "reasoning_effort" in payload:
-                    # This model/gateway may reject the non-standard field with any
-                    # 4xx — drop it and try once more before giving up on the model.
+                if (400 <= r.status_code < 500 and r.status_code != 429
+                        and "reasoning_effort" in payload):
+                    # gateway may reject the non-standard field with any 4xx —
+                    # drop it and try once more before giving up on the model.
                     payload.pop("reasoning_effort")
                     r = self._client.post(url, **post_kw)
+                if r.status_code == 429 or r.status_code >= 500:
+                    if attempt == 0:
+                        time.sleep(1.5)
+                        continue
+                    raise RecoverableResponseError(f"{model}: HTTP {r.status_code} (after backoff)")
                 if r.status_code >= 400:
                     body = ""
                     try:
@@ -170,8 +224,11 @@ class Model:
             reason = str(data.get("error"))[:120] if isinstance(data, dict) else "non-dict body"
             raise RecoverableResponseError(f"{model}: no choices ({reason})")
 
-        results = [{"text": _extract_message_text(c), "finish": c.get("finish_reason")}
-                   for c in data["choices"]]
+        results = []
+        for c in data["choices"]:
+            text, reasoning = _extract_message_text(c)
+            results.append({"text": text, "finish": c.get("finish_reason"),
+                            "salvage": "" if text else _salvage_answer(reasoning)})
         if self.meter is not None:
             usage = data.get("usage") or {}
             pt = usage.get("prompt_tokens")

@@ -15,10 +15,11 @@ import re
 
 from .verifiers import try_arithmetic  # pure expression + "x% of y"
 
-# A name is a capitalized word, optionally with a single standalone label letter
-# ("Box A", "Team B"). The \b after the letter stops it swallowing the next word
-# (so "Bob And Carol" never captures "Bob A").
-_NAME = r"[A-Z][a-z]+(?:\s[A-Z]\b)?"
+# A name is a capitalized word, optionally followed by a capitalized surname or
+# a single standalone label letter ("Sam Smith", "Box A", "Team B"). The \b after
+# the letter stops it swallowing the next word (so "Bob And Carol" never captures
+# "Bob A"); a full surname is only taken when the next word is itself Capitalized.
+_NAME = r"[A-Z][a-z]+(?:\s(?:[A-Z][a-z]+|[A-Z]\b))?"
 _GT = {"taller", "older", "faster", "bigger", "larger", "heavier", "stronger",
        "richer", "wealthier", "longer"}
 _LT = {"shorter", "younger", "slower", "smaller", "lighter", "weaker", "poorer"}
@@ -61,12 +62,15 @@ def solve_ordering(prompt: str) -> str | None:
     """Comparative chains → who is the X-est. Proves a unique total order or None."""
     # 1) intent from the question clause only (whole words), pick the dimension.
     # Accepts "who ..." and "which ...", ending at ? . or ! (many puzzles use
-    # statement form: "Tell me who came in last."). Misfires are still fenced off
-    # by the >=2-edge + unique-total-order requirement below.
-    qm = re.search(r"\b(?:who|which)\b([^?.!\n]*)", prompt.lower())
-    if not qm:
+    # statement form: "Tell me who came in last."). The LAST such clause is the
+    # question — red-teaming caught a preamble clause ("Everyone asks which dog
+    # is the biggest. ... Who is the smallest?") inverting max/min when the
+    # FIRST clause was used. Misfires are still fenced off by the >=2-edge +
+    # unique-total-order requirement below.
+    clauses = re.findall(r"\b(?:who|which)\b([^?.!\n]*)", prompt.lower())
+    if not clauses:
         return None
-    qwords = set(re.findall(r"[a-z]+", qm.group(1)))
+    qwords = set(re.findall(r"[a-z]+", clauses[-1]))
     attr = want_max = want_min = None
     for a in _ATTRS:
         hi, lo = bool(qwords & a["max"]), bool(qwords & a["min"])
@@ -201,22 +205,37 @@ def solve_math_word(prompt: str) -> str | None:
     p = prompt.lower().replace(",", "")
 
     if any(k in p for k in ("discount", "reduced by", "% off")):
+        # REVERSE question ("After a 20% discount ... what was the ORIGINAL
+        # price?") must defer: the forward formula answers it confidently wrong
+        # (red-teamed: $40 after 20% -> said 32, true 50).
+        if re.search(r"\b(?:what|find|determine)\b[^.?!]*\b(?:original(?:ly)?|before)\b", p) \
+                or re.search(r"\boriginal(?:ly)?\s+price\s*\?", p):
+            return None
         disc = re.search(r"(\d+(?:\.\d+)?)\s*%", p)
         # price must be anchored to a currency/price signal — NOT just "the first
         # number", which is the discount % in phrasings that state it first.
+        amounts = re.findall(r"\$\s*(\d+(?:\.\d+)?)", p) + re.findall(r"(\d+(?:\.\d+)?)\s*dollars", p)
         price = (re.search(r"\$\s*(\d+(?:\.\d+)?)", p)
                  or re.search(r"(\d+(?:\.\d+)?)\s*dollars", p)
                  or re.search(r"(?:costs?|priced at|price(?:d| is| was)?|originally|was)\s+\$?\s*(\d+(?:\.\d+)?)", p))
-        # single unambiguous discount, and the price is not the discount number
+        # single unambiguous discount, a SINGLE money amount (an extra "$5 off"
+        # means multi-step -> defer), and the price is not the discount number
         if (price and disc
                 and len(re.findall(r"\d+(?:\.\d+)?\s*%", p)) == 1
+                and len(amounts) <= 1
                 and price.group(1) != disc.group(1)):
             return _fmt(float(price.group(1)) * (1 - float(disc.group(1)) / 100.0))
 
     if "speed" in p:
         m = re.search(r"(\d+(?:\.\d+)?)\s*(?:km|kilometers|miles|meters|m)\b.*?\bin\s+"
                       r"(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)\b", p)
-        if m and float(m.group(2)) != 0:
+        # exactly ONE distance-time pair (two numbers total) and the question
+        # itself asks for speed — not time ("how many HOURS...") and not
+        # distance ("how FAR does it go in 2 hours" answered 30 km/h instead
+        # of 120 km in review). Red-teamed misfires all defer now.
+        asks_other = re.search(r"how (?:many hours|long|much time|far)|what distance", p)
+        if (m and float(m.group(2)) != 0 and not asks_other
+                and len(re.findall(r"\d+(?:\.\d+)?", p)) == 2):
             return _fmt(float(m.group(1)) / float(m.group(2)))
 
     # profit / loss percentage: "buys for $80 ... sells for $100 ... profit percentage"

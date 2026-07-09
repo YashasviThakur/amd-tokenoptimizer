@@ -50,27 +50,35 @@ RUN python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
 
 COPY agent ./agent
 
-# USE_LOCAL=1: the local model carries the categories it's reliable on (factual,
-#   sentiment, summarization, ner) for 0 tokens; solvers handle exact math/logic;
-#   Fireworks is only an escalation and, if it's dead in the grader, the router
-#   keeps the local answer instead of an empty one.
-# DISABLE_SOLVERS=0: solvers ON (the earlier =1 was a temporary diagnostic).
-# LOCAL_THREADS=2: matches the 2-vCPU grading cgroup. 0 (= all cores) reads the
-#   HOST's core count through the cgroup and oversubscribes, slowing inference.
-# LOCAL_SAMPLES_HARD=2: factual self-consistency — two agreeing draws are kept
-#   locally (0 tokens); a lone or disagreeing draw still escalates (gate-safe).
-# LOCAL_ONLY=0: flip to 1 for the ZERO-token mode (never call Fireworks) once the
-#   leaderboard confirms local-only accuracy clears the gate. Do not flip blind.
-# REMOTE_MODEL is the escalation fallback if the harness injects no ALLOWED_MODELS.
+# REMOTE_FIRST=1 (gate-pass profile): every non-solver task goes to the gateway
+#   model — the profile of all four gate-passing agents (each exactly 84.2%).
+#   Every local-first image failed the gate (10.5% -> 26.3%): the 3B's format-only
+#   confidence gates keep wrong-but-well-formed answers.
+# USE_LOCAL=1: the bundled model is now ONLY a dead-remote rescue — if the
+#   grader's Fireworks access fails, a local answer strictly beats an empty one.
+# DISABLE_SOLVERS=0: exact solvers ON; they are prove-or-defer and red-teamed
+#   (14 misfire classes fixed after the adversarial audit).
+# LOCAL_THREADS=2: matches the 2-vCPU grading cgroup.
+# REASONING_EFFORT= (empty = never sent): nonstandard field; the allowed gemma-4
+#   models don't use it, and rejected calls double the proxy-side request count.
+# MAX_WORKERS=3: don't stampede the judging proxy (429 bursts sank other teams).
+# MODEL_DISCOVERY=0: ALLOWED_MODELS (injected) is authoritative and matched
+#   VERBATIM by the proxy — never call /models-derived or prefixed ids.
+# REMOTE_MODEL: preferred pick WITHIN the allowed list (short name, verbatim
+#   launch-day id); non-reasoning gemma = cheapest tokens. If the harness injects
+#   no list at all, config.fallback_models supplies the launch-day five verbatim.
 ENV INPUT_PATH=/input/tasks.json \
     OUTPUT_PATH=/output/results.json \
+    REMOTE_FIRST=1 \
     USE_LOCAL=1 \
     DISABLE_SOLVERS=0 \
     LOCAL_ONLY=0 \
     LOCAL_MODEL_PATH=/models/qwen2.5-3b-instruct-q4_k_m.gguf \
     LOCAL_THREADS=2 \
     LOCAL_SAMPLES_HARD=2 \
-    REASONING_EFFORT=low \
-    REMOTE_MODEL=accounts/fireworks/models/gemma-4-31b-it
+    REASONING_EFFORT= \
+    MAX_WORKERS=3 \
+    MODEL_DISCOVERY=0 \
+    REMOTE_MODEL=gemma-4-31b-it
 
 ENTRYPOINT ["python", "-m", "agent.main"]

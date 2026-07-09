@@ -116,14 +116,12 @@ def _diagnose_env() -> None:
 
 
 def _resolve_models(remote) -> None:
-    """Reconcile our model list with what the gateway ACTUALLY serves.
-
-    The grader's FIREWORKS_BASE_URL may host different model IDs than we assume;
-    calling a name it doesn't serve 404s every request (-> deterministic solver-only
-    score). Query /models and: if our configured names intersect what's served, keep
-    the intersection (honors ALLOWED_MODELS); if they DON'T match (our names are
-    wrong for this deployment), fall back to the served list so we call real models.
-    Any probe failure leaves the configured list untouched."""
+    """Cross-check our model list against GET /models — but NEVER displace an
+    injected ALLOWED_MODELS: that list is authoritative (the judging proxy
+    matches entries verbatim; calling anything else is a MODEL_VIOLATION), and a
+    proxy catalog with a different naming scheme must not evict the correct
+    names. Discovery only (a) narrows to the intersection when one exists, or
+    (b) supplies a list when we have NONE configured. Off by default."""
     if not config.model_discovery:
         return
     served = remote.list_models()
@@ -138,11 +136,11 @@ def _resolve_models(remote) -> None:
     inter = [m for m in configured if m in served]
     if inter:
         config.allowed_models = inter
-    else:
-        # our names are unknown to this gateway -> use what it really serves
-        print(f"[agent] configured models {configured} not served; using gateway list "
-              f"({len(served)} models)", file=sys.stderr)
+    elif not configured:
         config.allowed_models = served
+    else:
+        print(f"[agent] configured models {configured[:8]} not in /models catalog; "
+              f"KEEPING them verbatim (allow-list is authoritative)", file=sys.stderr)
     print(f"[agent] resolved models: {config.allowed_models[:8]}", file=sys.stderr)
 
 
@@ -261,6 +259,10 @@ def selftest() -> int:
         # race ordering ("ahead of" + "won") and profit% solvers
         {"task_id": "st7", "prompt": "In a race, Maya finished ahead of Leo, and Leo finished ahead of Nina. Who won?"},
         {"task_id": "st8", "prompt": "A shopkeeper buys an item for $80 and sells it for $100. What is the profit percentage?"},
+        # red-teamed misfire regressions: a year RANGE must not be eval'd as
+        # subtraction, and a REVERSE discount must defer (forward formula = wrong)
+        {"task_id": "st9", "prompt": "How many years did World War I last, from 1914-1918?"},
+        {"task_id": "st10", "prompt": "After a 20% discount, a shirt costs $40. What was the original price?"},
     ]
     d = tempfile.mkdtemp()
     inp, outp = os.path.join(d, "tasks.json"), os.path.join(d, "results.json")
@@ -275,7 +277,7 @@ def selftest() -> int:
     try:
         out = json.loads(open(outp, encoding="utf-8").read())
         by = {o["task_id"]: o["answer"] for o in out}
-        ok = (isinstance(out, list) and len(out) == 8
+        ok = (isinstance(out, list) and len(out) == 10
               and all(isinstance(o.get("task_id"), str) and isinstance(o.get("answer"), str) for o in out)
               and "144" in by["st1"]
               and "carol" in by["st2"].lower()
@@ -284,7 +286,9 @@ def selftest() -> int:
               and by["st5"].strip() == ""                 # power+add: solver deferred
               and by["st6"].strip() == ""                 # percent+add: solver deferred
               and "maya" in by["st7"].lower()             # race ordering (ahead of / won)
-              and "25" in by["st8"])                      # profit percentage
+              and "25" in by["st8"]                       # profit percentage
+              and by["st9"].strip() == ""                 # year range: no -4 misfire
+              and by["st10"].strip() == "")               # reverse discount: deferred
     except Exception as e:
         print(f"[selftest] FAIL: {e}")
         return 1

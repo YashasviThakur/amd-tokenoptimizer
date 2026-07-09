@@ -85,8 +85,14 @@ def _candidate_models(category: str) -> list[str]:
     bad model with no fallback. Capped so token/latency cost stays bounded."""
     models = list(dict.fromkeys(config.allowed_models))  # de-dup, keep order
     if not models:
-        # has_remote() can be true off the API key alone (no model list injected).
-        return [config.preferred_model] if config.preferred_model else []
+        # has_remote() can be true off the API key alone (no model list injected):
+        # fall back to the VERBATIM launch-day allow-list (config.fallback_models),
+        # never a prefixed/invented id — one 404ing name = every escalation dead.
+        models = list(dict.fromkeys(
+            ([config.preferred_model] if config.preferred_model else [])
+            + config.fallback_models))
+    if not models:
+        return []
 
     def rank(m: str):
         lm = m.lower()
@@ -96,11 +102,24 @@ def _candidate_models(category: str) -> list[str]:
         return (code_bias, 1 if depr else 0, pref, models.index(m))
 
     ordered = sorted(models, key=rank)
-    # honor an explicit preference first, if it's actually allowed
-    if config.preferred_model and config.preferred_model in ordered:
+    # honor an explicit preference first, if it's actually allowed — except for
+    # code tasks, where a code-specialist model (rank puts it first) wins.
+    if (config.preferred_model and config.preferred_model in ordered
+            and not (category in ("code_gen", "code_debug")
+                     and "code" in ordered[0].lower())):
         ordered.remove(config.preferred_model)
         ordered.insert(0, config.preferred_model)
-    return ordered[:3]  # cap fan-out: 3 attempts bound tokens + per-task time
+    # cap fan-out at 3, but force FAMILY DIVERSITY into the last slot: with an
+    # allow-list of three gemma variants, a systemic gemma failure (template,
+    # rate limit) would otherwise kill every candidate for the task.
+    top = ordered[:2]
+    fam = ordered[0].split("-")[0].lower() if ordered else ""
+    diverse = next((m for m in ordered[2:] if m.split("-")[0].lower() != fam), None)
+    if diverse:
+        top.append(diverse)
+    elif len(ordered) > 2:
+        top.append(ordered[2])
+    return top
 
 
 def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0,
@@ -130,11 +149,13 @@ def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0
     for model in candidates:
         if not model:
             continue
-        # Per model: try at the normal ceiling; if a SHORT answer truncated
-        # (finish=length -> the model reasons in-content and ran out of room), retry
-        # the SAME model ONCE at a higher ceiling before failing over. This is what
-        # rescues a single/homogeneous grader model that can't be escaped by fallback.
-        for mt in (max_tok, min(max_tok * 3, 2048)):
+        # Per model: try at the normal ceiling; on truncation (finish=length — a
+        # reasoning-style model burned the budget on its trace before the answer),
+        # retry the SAME model ONCE at a higher ceiling before failing over. This
+        # now applies to EVERY category: gateway simulation showed the old
+        # short-categories-only rule accepting trace-truncated garbage for
+        # summarization/ner/code. Ceiling capped so a retry stays <30s/request.
+        for mt in (max_tok, min(max_tok * 3, 1536)):
             rem = _time_left()
             if rem is not None and rem <= 4.0:  # not enough time for another attempt
                 break
@@ -144,14 +165,17 @@ def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0
                                   reasoning_effort=config.reasoning_effort, timeout=call_timeout)
                 ans = (out[0].get("text") or "").strip()
                 finish = out[0].get("finish")
-                truncated_short = finish == "length" and category in _SHORT_CATEGORIES
-                if ans and not truncated_short:  # good answer — done
+                salvage = (out[0].get("salvage") or "").strip()
+                truncated = finish == "length"
+                if ans and not truncated:  # good answer — done
                     return {"task_id": task_id, "answer": ans, "route": "remote",
                             "category": category, "tokens": remote.meter.total - before,
                             "confidence": round(conf, 3), "model": model}
-                if ans and not last["answer"]:  # keep best-effort partial as a floor
+                if ans and not last["answer"]:  # truncated partial: floor only
                     last = {"answer": ans, "model": model, "error": f"weak({finish})"}
-                if truncated_short and mt == max_tok:
+                elif salvage and not last["answer"]:  # trace-extracted floor
+                    last = {"answer": salvage, "model": model, "error": "salvaged"}
+                if truncated and mt == max_tok:
                     continue  # retry SAME model at the higher ceiling
                 break  # empty, or already retried high -> fail over to next model
             except Exception as e:
@@ -229,11 +253,16 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
     # token leaderboard). Only honored when the local model actually loaded, so a
     # bad flag can never strand every task with no answerer at all.
     remote_ok = config.has_remote() and not (config.local_only and have_local)
-    # 2) hard categories / near-deadline / no local / very long prompt -> Fireworks.
-    # A long prompt means slow CPU prefill on 2 vCPU, which risks the <30s/task
-    # limit, so escalate it instead of grinding locally.
+    # 2) REMOTE-FIRST (default) or hard/near-deadline/no-local/long -> Fireworks.
+    # Remote-first: every non-solver task goes to the gateway model — the profile
+    # all four gate-passing leaderboard agents run. The local tier's format-only
+    # confidence gates kept wrong-but-well-formed answers (sentiment at conf 1.0
+    # with the WRONG label), which is what failed the gate at 26.3%; local is now
+    # a dead-remote rescue only. A long prompt also skips local (slow CPU prefill
+    # on 2 vCPU risks the <30s/task limit).
     too_long = len(prompt) > config.local_max_prompt_chars
-    if remote_ok and (prefer_remote or not have_local or category in HARD or too_long):
+    if remote_ok and (config.remote_first or prefer_remote or not have_local
+                      or category in HARD or too_long):
         r = _fireworks(task_id, category, prompt, remote, deadline=deadline)
         # Dead-remote rescue: every candidate failed with nothing to show (the
         # grader's Fireworks access being down does exactly this) -> a local answer

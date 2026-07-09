@@ -28,9 +28,9 @@ POLICY = {
     "summarization": ("Summarize as instructed, honoring any length constraint. Output only the summary.", 512),
     "ner":           ('Extract named entities. Output ONLY minified JSON with keys '
                       '"person","org","location","date" (each a list of strings).', 512),
-    "code_debug":    ("Fix the bug. Output only the corrected code, no explanation.", 1024),
+    "code_debug":    ("Fix the bug. Output only the corrected code, no explanation.", 896),
     "logic":         ("Solve the puzzle. Reason internally, then output only the final answer.", 512),
-    "code_gen":      ("Write the function to spec. Output only the code, no explanation.", 1024),
+    "code_gen":      ("Write the function to spec. Output only the code, no explanation.", 896),
 }
 DEFAULT = ("Answer correctly and concisely. Output only the answer.", 512)
 

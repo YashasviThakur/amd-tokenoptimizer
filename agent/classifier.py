@@ -60,11 +60,32 @@ def classify(prompt: str) -> str:
     if any(k in p for k in ("fix the bug", "debug", "what's wrong", "whats wrong",
                             "correct the", "error in this code", "why does this code")):
         return "code_debug"
+    # syllogisms BEFORE the math check ("are all X Y?", "do all X ...?",
+    # "no X are Y") — these classified as factual, which made solve_syllogism
+    # dead code and sent classic logic tasks to the weakest tier.
+    if re.search(r"\b(?:are|do)\s+all\b", p) or re.search(r"\bno\s+\w+s?\s+are\b", p) \
+            or re.search(r"\ball\s+\w+s?\s+are\b", p):
+        return "logic"
+    # math trigger: verb list red-teamed against grader-style word problems —
+    # "find/determine/solve/compute" alone routed 72% of realistic math word
+    # problems to 'factual' (= the weak local tier) before these were added.
     if any(k in p for k in ("calculate", "what is", "how much", "how many", "percent", "%",
-                            "average", "sum of", "product of", "speed", "total cost", "profit")) \
+                            "average", "sum of", "product of", "speed", "total cost", "profit",
+                            "compute", "evaluate", "solve", "find the", "find its", "find his",
+                            "find her", "determine", "subtract", "multiply", "divide",
+                            "convert", "how long", "area", "perimeter")) \
             and re.search(r"\d", p):
         return "math"
-    if re.search(r"[0-9]+\s*[\+\-\*/x]\s*[0-9]+", p):
+    # number-words count as the numeric signal too ("how many ... forty marbles"
+    # has zero digits but is pure math). Verbs kept STRONG (quantity questions
+    # only) and "one" excluded — review showed "Find the odd ONE out" style
+    # multiple-choice tasks being forced onto the numeric-only remote prompt.
+    if any(k in p for k in ("how many", "how much", "calculate", "compute")) \
+            and re.search(r"\b(?:two|three|four|five|six|seven|eight|nine|ten|eleven|"
+                          r"twelve|dozen|twenty|thirty|forty|fifty|sixty|seventy|eighty|"
+                          r"ninety|hundred|thousand|half|twice|double|triple)\b", p):
+        return "math"
+    if re.search(r"[0-9]+\s*[\+\-\*/x^]\s*[0-9]+", p):
         return "math"
     # constraint/assignment puzzle: a "who owns/sits/…?" question with constraint
     # language ("each a different", "does not", "neither"). These are deductive

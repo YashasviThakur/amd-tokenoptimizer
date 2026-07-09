@@ -55,6 +55,20 @@ def try_arithmetic(prompt: str) -> str | None:
 
     m = re.search(r"([0-9][0-9\.\s\+\-\*/\(\)]*[0-9\)])", p)
     if m and re.search(r"[\+\-\*/]", m.group(1)):
+        # Only trust the captured expression when it IS the whole question — a
+        # bare compute request like "What is 47 * 23?". Red-teaming showed the
+        # old unguarded eval turning year ranges ("from 1914-1918?" -> -4),
+        # scores ("3-11" -> -8), and fractions ("1/2 of 30" -> 0.5) into
+        # confident wrong answers. If ANY word besides a compute lead-in
+        # remains outside the expression, defer to the model.
+        rest = p[:m.start()] + " " + p[m.end():]
+        rest = re.sub(r"\b(what is|what's|whats|calculate|compute|evaluate|"
+                      r"the value of|the result of|result of|value of|equals|"
+                      r"equal to|please|find)\b", " ", rest)
+        # a minus/slash OUTSIDE the captured expression means the capture is a
+        # fragment of something bigger (a negative operand, a fraction) — defer.
+        if "-" in rest or "/" in rest or re.sub(r"[^a-z0-9]", "", rest):
+            return None
         try:
             return _fmt(_eval(ast.parse(m.group(1).strip(), mode="eval").body))
         except Exception:
