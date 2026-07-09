@@ -7,6 +7,7 @@ are the score. Both expose the same .chat() signature so the router is agnostic.
 from __future__ import annotations
 
 import re
+import threading
 import time
 
 import httpx
@@ -27,17 +28,23 @@ def _clean_answer(text: str) -> str:
 
 
 class RemoteMeter:
-    """Tallies the only thing that counts: tokens sent through Fireworks."""
+    """Tallies the only thing that counts: tokens sent through Fireworks.
+
+    Thread-safe: tasks are routed concurrently, so many worker threads call add()
+    at once. A lock keeps the running totals from racing (lost updates would
+    under-count the token score)."""
 
     def __init__(self):
         self.prompt_tokens = 0
         self.completion_tokens = 0
         self.calls = 0
+        self._lock = threading.Lock()
 
     def add(self, prompt_tokens: int, completion_tokens: int) -> None:
-        self.prompt_tokens += prompt_tokens
-        self.completion_tokens += completion_tokens
-        self.calls += 1
+        with self._lock:
+            self.prompt_tokens += prompt_tokens
+            self.completion_tokens += completion_tokens
+            self.calls += 1
 
     @property
     def total(self) -> int:
@@ -71,7 +78,11 @@ class Model:
             payload["reasoning_effort"] = reasoning_effort
 
         url = f"{self.base_url}/chat/completions"
-        # one retry on transient failure (timeout / 5xx) — cheap insurance
+        # Retry only on FAST transient failures (connect error / 5xx). Do NOT retry
+        # a read timeout: a model slow enough to blow the read deadline once will do
+        # it again, and a second full-length wait would double the per-task wall
+        # time (risking the <30s/task limit) for no gain. With concurrent routing,
+        # a longer single read timeout — not retries — is what saves slow calls.
         data = None
         for attempt in range(2):
             try:
@@ -87,6 +98,8 @@ class Model:
                 r.raise_for_status()
                 data = r.json()
                 break
+            except httpx.ReadTimeout:
+                raise  # don't retry slow generations — see note above
             except Exception:
                 if attempt == 1:
                     raise

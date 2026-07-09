@@ -10,6 +10,7 @@ import json
 import os
 import sys
 import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 from .backends import LocalModel, Model, RemoteMeter
 from .config import config
@@ -129,42 +130,61 @@ def run() -> dict:
         _write_json(config.output_path, [])  # valid JSON, still exit 0
         return {"tasks": 0, "error": str(e)}
 
-    # Per-task: solver (free) -> local (free, easy categories) -> Fireworks.
-    #  * soft deadline (run_deadline_s): flip remaining tasks to Fireworks (fast).
-    #  * HARD deadline (+60s): stop the loop entirely and fill the rest with empty
-    #    answers, so a large/slow hidden set can never blow the 10-min budget. The
-    #    harness SIGKILLs at ~600s with NO output = ZERO; a partial file is scored.
-    #  * incremental atomic writes: a mid-loop kill always leaves a valid results.json.
-    results, meta, routes = [], [], {}
-    hard_deadline = config.run_deadline_s + 60.0
+    # Route tasks CONCURRENTLY (config.max_workers at a time). Sequential Fireworks
+    # calls made a large hidden set overrun the 10-min budget on the grader's slower
+    # network -> remaining tasks emitted empty -> failed accuracy gate. Concurrency
+    # cuts wall-clock ~Nx so the whole set finishes in time. Guarantees preserved:
+    #  * HARD deadline: any task not finished by then is emitted empty (a slow/huge
+    #    set can never blow the budget; the harness SIGKILLs at ~600s = ZERO).
+    #  * results stay in input order; incremental atomic writes survive a mid-run kill.
     n = len(tasks)
-    for i, task in enumerate(tasks):
-        elapsed = time.time() - t0
-        if elapsed > hard_deadline:  # out of time — emit remaining as empty and stop
-            print(f"[agent] hard deadline {hard_deadline:.0f}s hit at task {i}/{n}; "
-                  f"emitting {n - i} remaining as empty", file=sys.stderr)
-            for rem in tasks[i:]:
-                results.append({"task_id": str(rem.get("task_id")), "answer": ""})
-                routes["deadline-skip"] = routes.get("deadline-skip", 0) + 1
-            break
-        prefer_remote = elapsed > config.run_deadline_s
+    routes: dict = {}
+    # pre-seed every slot with a valid empty answer so a task that never completes
+    # (deadline / crash) still appears in a well-formed results.json.
+    results = [{"task_id": str(t.get("task_id")), "answer": ""} for t in tasks]
+    meta = [{"task_id": t.get("task_id"), "route": "deadline-skip", "tokens": 0} for t in tasks]
+    hard_deadline = config.run_deadline_s + 60.0
+
+    def _work(task):
         try:
-            r = route(task, local, remote, prefer_remote=prefer_remote)
+            return route(task, local, remote, prefer_remote=False)
         except Exception as e:  # never let one task sink the batch
-            r = {"task_id": task.get("task_id"), "answer": "", "route": "error",
-                 "category": "?", "tokens": 0, "error": str(e)}
-        routes[r.get("route", "?")] = routes.get(r.get("route", "?"), 0) + 1
-        if r.get("error"):  # surface remote-call failures immediately, not just in aggregate
-            print(f"[agent] task {r.get('task_id')} ({r.get('category')}) failed: {r['error']}", file=sys.stderr)
-        results.append({"task_id": str(r.get("task_id")), "answer": _answer_str(r.get("answer"))})
-        meta.append({"task_id": r.get("task_id"), "route": r.get("route"),
-                     "category": r.get("category"), "confidence": r.get("confidence"),
-                     "tokens": r.get("tokens") or 0, "error": r.get("error")})
-        if i % 8 == 7:  # periodic atomic flush -> a kill leaves a valid partial file
-            try:
-                _write_json(config.output_path, results)
-            except Exception:
-                pass
+            return {"task_id": task.get("task_id"), "answer": "", "route": "error",
+                    "category": "?", "tokens": 0, "error": str(e)}
+
+    done_count = 0
+    with ThreadPoolExecutor(max_workers=max(1, config.max_workers)) as ex:
+        fut_to_idx = {ex.submit(_work, task): i for i, task in enumerate(tasks)}
+        pending = set(fut_to_idx)
+        while pending:
+            remaining = hard_deadline - (time.time() - t0)
+            if remaining <= 0:  # out of time — leave the rest as their empty pre-seed
+                skipped = len(pending)
+                print(f"[agent] hard deadline {hard_deadline:.0f}s hit; "
+                      f"emitting {skipped} unfinished tasks as empty", file=sys.stderr)
+                for f in pending:
+                    f.cancel()
+                routes["deadline-skip"] = routes.get("deadline-skip", 0) + skipped
+                break
+            just_done, pending = wait(pending, timeout=min(remaining, 5.0),
+                                      return_when=FIRST_COMPLETED)
+            for f in just_done:
+                i = fut_to_idx[f]
+                r = f.result()
+                routes[r.get("route", "?")] = routes.get(r.get("route", "?"), 0) + 1
+                if r.get("error"):
+                    print(f"[agent] task {r.get('task_id')} ({r.get('category')}) failed: {r['error']}",
+                          file=sys.stderr)
+                results[i] = {"task_id": str(r.get("task_id")), "answer": _answer_str(r.get("answer"))}
+                meta[i] = {"task_id": r.get("task_id"), "route": r.get("route"),
+                           "category": r.get("category"), "confidence": r.get("confidence"),
+                           "tokens": r.get("tokens") or 0, "error": r.get("error")}
+                done_count += 1
+                if done_count % 8 == 0:  # periodic atomic flush -> a kill leaves a valid partial file
+                    try:
+                        _write_json(config.output_path, results)
+                    except Exception:
+                        pass
 
     try:
         _write_json(config.output_path, results)

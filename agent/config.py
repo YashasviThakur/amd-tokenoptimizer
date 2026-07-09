@@ -68,9 +68,16 @@ class Config:
 
     # Keep a local answer when confidence >= this; else escalate to Fireworks.
     escalate_threshold: float = float(os.getenv("ESCALATE_THRESHOLD", "0.60"))
-    # httpx read timeout. 14s so a single Fireworks call + one retry (14+0.5+14)
-    # stays under the <30s/task limit even against a slow-but-alive endpoint.
-    request_timeout: float = float(os.getenv("REQUEST_TIMEOUT", "14"))
+    # httpx read timeout. 26s (was 14): a reasoning model's trace can legitimately
+    # take >14s, and the OLD value timed those calls out -> empty answer -> wrong.
+    # Read timeouts are no longer retried, so a single 26s call stays under the
+    # <30s/task limit while giving slow generations room to finish.
+    request_timeout: float = float(os.getenv("REQUEST_TIMEOUT", "26"))
+    # Concurrency: route this many tasks through Fireworks at once. Sequential calls
+    # made a large hidden set blow the 10-min total budget (a ~500s local run would
+    # overrun on the grader's slower network -> remaining tasks emitted empty ->
+    # ~26% accuracy). Concurrent calls cut wall-clock ~Nx so the whole set finishes.
+    max_workers: int = int(os.getenv("MAX_WORKERS", "8"))
     # Soft wall-clock budget: past this, remaining tasks skip local and go to
     # Fireworks (fast). main.py adds a HARD stop (+60s) that ends the loop and emits
     # empties, so a large/slow hidden set can never blow the 10-min budget (=ZERO).
