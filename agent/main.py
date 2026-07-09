@@ -115,11 +115,44 @@ def _diagnose_env() -> None:
           f"reasoning_effort={config.reasoning_effort!r}", file=sys.stderr)
 
 
+def _resolve_models(remote) -> None:
+    """Reconcile our model list with what the gateway ACTUALLY serves.
+
+    The grader's FIREWORKS_BASE_URL may host different model IDs than we assume;
+    calling a name it doesn't serve 404s every request (-> deterministic solver-only
+    score). Query /models and: if our configured names intersect what's served, keep
+    the intersection (honors ALLOWED_MODELS); if they DON'T match (our names are
+    wrong for this deployment), fall back to the served list so we call real models.
+    Any probe failure leaves the configured list untouched."""
+    if not config.model_discovery:
+        return
+    served = remote.list_models()
+    if not served:
+        return
+    # drop obvious non-chat models (image / embedding / audio) so fallback never
+    # wastes an attempt calling one for a text answer.
+    _NON_CHAT = ("flux", "stable-diffusion", "sdxl", "playground", "embed", "embedding",
+                 "whisper", "dall-e", "clip", "rerank", "-vision-")
+    served = [m for m in served if not any(k in m.lower() for k in _NON_CHAT)] or served
+    configured = config.allowed_models
+    inter = [m for m in configured if m in served]
+    if inter:
+        config.allowed_models = inter
+    else:
+        # our names are unknown to this gateway -> use what it really serves
+        print(f"[agent] configured models {configured} not served; using gateway list "
+              f"({len(served)} models)", file=sys.stderr)
+        config.allowed_models = served
+    print(f"[agent] resolved models: {config.allowed_models[:8]}", file=sys.stderr)
+
+
 def run() -> dict:
     t0 = time.time()
     _diagnose_env()
     meter = RemoteMeter()
     remote = Model(config.fireworks_base_url, config.fireworks_api_key, config.request_timeout, meter=meter)
+    if config.has_remote():
+        _resolve_models(remote)
     local = _build_local()
 
     try:

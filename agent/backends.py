@@ -7,6 +7,7 @@ are the score. Both expose the same .chat() signature so the router is agnostic.
 from __future__ import annotations
 
 import re
+import sys
 import threading
 import time
 
@@ -95,6 +96,26 @@ class Model:
             timeout=httpx.Timeout(timeout, connect=8.0, pool=8.0),
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         )
+
+    def list_models(self) -> list[str]:
+        """GET {base_url}/models — the model IDs the gateway ACTUALLY serves.
+
+        The grader injects its own FIREWORKS_BASE_URL, which may be a private/AMD
+        deployment serving DIFFERENT model IDs than the public API. Calling a name
+        that deployment doesn't host 404s every request -> every remote task empty
+        -> the deterministic solver-only score we keep seeing. Discovering the real
+        list lets us call names that exist. Best-effort: any failure returns []."""
+        try:
+            r = self._client.get(f"{self.base_url}/models", timeout=10.0)
+            r.raise_for_status()
+            data = r.json()
+            items = data.get("data") if isinstance(data, dict) else data
+            if isinstance(items, list):
+                ids = [m.get("id") if isinstance(m, dict) else m for m in items]
+                return [i for i in ids if isinstance(i, str) and i]
+        except Exception as e:
+            print(f"[agent] /models probe failed: {str(e)[:120]}", file=sys.stderr)
+        return []
 
     def chat(self, model: str, messages: list[dict], max_tokens: int = 128,
              temperature: float = 0.0, n: int = 1, reasoning_effort: str | None = None,

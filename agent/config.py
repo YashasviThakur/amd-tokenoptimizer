@@ -83,6 +83,10 @@ class Config:
     # (a model that fails fast — 5xx / error body — leaves plenty of room to try the
     # next; a slow-but-working model just answers on the first attempt).
     per_task_budget_s: float = float(os.getenv("PER_TASK_BUDGET_S", "28"))
+    # Query {FIREWORKS_BASE_URL}/models at startup to learn which model IDs the
+    # gateway actually serves, and call those. The grader's deployment may host
+    # different names than we hardcode; a wrong name 404s every call. On by default.
+    model_discovery: bool = os.getenv("MODEL_DISCOVERY", "1").strip().lower() in ("1", "true", "yes")
     # Soft wall-clock budget: past this, remaining tasks skip local and go to
     # Fireworks (fast). main.py adds a HARD stop (+60s) that ends the loop and emits
     # empties, so a large/slow hidden set can never blow the 10-min budget (=ZERO).
