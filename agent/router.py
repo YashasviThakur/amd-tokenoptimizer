@@ -73,10 +73,13 @@ def _looks_labeled(ans: str) -> bool:
     return bool(re.search(r"\(\s*(person|org|organization|location|date|time)\b", ans, re.I))
 
 
-# Families ranked by measured cleanliness/cost (gpt-oss cleanest+cheapest; kimi
-# deprioritized — kimi-k2p5 returns 5xx error bodies, some kimi builds dump
-# reasoning). NOTHING is excluded: a homogeneous grader list is still attempted.
-_FAMILY_PREF = ("gpt-oss", "gemma", "glm", "deepseek", "qwen", "llama", "mixtral", "phi")
+# Families ranked by MEASURED end-to-end accuracy on our 96-task stress set.
+# minimax-m3 leads: 94.8% through this router (the only Track-1 allowed model we
+# could validate — gemma-4 404s on the real API, so it has never been tested and
+# must not outrank a measured model). kimi deprioritized (dumps reasoning into
+# content; the extractor handles it, but clean-content models come first).
+# NOTHING is excluded: a homogeneous grader list is still attempted.
+_FAMILY_PREF = ("minimax", "gpt-oss", "gemma", "glm", "deepseek", "qwen", "llama", "mixtral", "phi")
 _DEPRIORITIZE = ("kimi",)
 _SHORT_CATEGORIES = {"sentiment", "math", "factual", "logic"}
 
