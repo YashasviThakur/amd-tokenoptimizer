@@ -12,7 +12,7 @@ import sys
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
-from .backends import LocalModel, Model, RemoteMeter
+from .backends import LocalModel, Model, RemoteMeter, strip_code_fence
 from .config import config
 from .router import route
 
@@ -206,7 +206,10 @@ def run() -> dict:
                 if r.get("error"):
                     print(f"[agent] task {r.get('task_id')} ({r.get('category')}) failed: {r['error']}",
                           file=sys.stderr)
-                results[i] = {"task_id": str(r.get("task_id")), "answer": _answer_str(r.get("answer"))}
+                ans = _answer_str(r.get("answer"))
+                if r.get("category") in ("code_debug", "code_gen"):
+                    ans = strip_code_fence(ans)  # raw code — the grader execs/matches it, ``` fences fail
+                results[i] = {"task_id": str(r.get("task_id")), "answer": ans}
                 meta[i] = {"task_id": r.get("task_id"), "route": r.get("route"),
                            "category": r.get("category"), "confidence": r.get("confidence"),
                            "tokens": r.get("tokens") or 0, "error": r.get("error")}

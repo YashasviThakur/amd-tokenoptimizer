@@ -90,6 +90,19 @@ _PREAMBLE_RE = re.compile(r"(let me|reason|trace|determine|think|first|step|cons
                           r"the passage|condense|core idea|length constraint|summariz|scanning)", re.I)
 
 
+def strip_code_fence(text: str) -> str:
+    """Return the code INSIDE a markdown fence (```lang ... ```), unwrapped; or the
+    text unchanged when there is no fence. Code answers must be RAW: the grader
+    execs / exact-matches them, and the ``` delimiters make the whole submission's
+    code tasks fail (measured: code_debug/code_gen were the only strict-judge losses,
+    every one caused by fences). Multiple blocks are concatenated; prose outside a
+    fence is dropped so only the code remains."""
+    blocks = _FENCE_RE.findall(text or "")
+    if blocks:
+        return "\n".join(b.strip("\n") for b in blocks if b.strip()).strip()
+    return (text or "").strip()
+
+
 def _after_marker(t: str) -> str:
     """The text after the LAST 'answer/final answer' marker (reasoning restates
     before concluding, so the last one is the conclusion)."""
