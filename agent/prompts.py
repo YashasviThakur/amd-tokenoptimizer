@@ -25,7 +25,7 @@ POLICY = {
     "factual":       ("Answer correctly and concisely. Output only the answer, no preamble.", 512),
     "math":          ("Solve the problem. Output only the final numeric answer, nothing else.", 512),
     "sentiment":     ("Classify the sentiment. Reply with exactly one word: positive, negative, or neutral.", 512),
-    "summarization": ("Summarize as instructed, honoring any length constraint. Output only the summary.", 512),
+    "summarization": ("Summarize as instructed, honoring any length constraint. Output only the summary.", 768),
     "ner":           ('Extract named entities. Output ONLY minified JSON with keys '
                       '"person","org","location","date" (each a list of strings).', 512),
     "code_debug":    ("Fix the bug. Output only the corrected code, no explanation.", 896),
@@ -59,9 +59,23 @@ def build_messages(category: str, prompt: str) -> list[dict]:
 REMOTE_SYSTEM = {
     "factual": "Give ONLY the final answer, no explanation.",
     "math": "Give ONLY the final numeric answer, nothing else.",
-    "sentiment": "Reply with ONLY one word: positive, negative, or neutral.",
-    "summarization": "Output ONLY the summary, no preamble.",
-    "ner": 'Output ONLY minified JSON: {"person":[],"org":[],"location":[],"date":[]}.',
+    # balanced-mixed hint: a lukewarm "works, nothing more to add" review was
+    # called positive (LLM-judge FAIL, expected neutral). Narrow clause only.
+    "sentiment": ("Reply with ONLY one word: positive, negative, or neutral. "
+                  "If praise and complaints are balanced, reply neutral."),
+    # word-limit compliance was invisible to the model ("no more than 15 words"
+    # -> 16 words) and minimax counts words ALOUD in content, leaking the tally
+    # as the answer when truncated. Say both things explicitly.
+    "summarization": ("Output ONLY the summary text. Obey any length limit "
+                      "(word or sentence count) EXACTLY. Never count words "
+                      "aloud or explain."),
+    # schema must ADAPT: hard-coding 4 keys made money/percent/product entities
+    # structurally impossible (100% miss) and overrode task-specified key sets.
+    "ner": ('Extract named entities. If the task specifies entity types, keys, '
+            'or a format, follow it EXACTLY. Otherwise output ONLY minified '
+            'JSON with keys "person","org","location","date" (lists of '
+            'strings), adding keys like "money","percent","product","time" '
+            'only when such entities appear.'),
     "code_debug": "Output ONLY the corrected code, no explanation.",
     "code_gen": "Output ONLY the code, no explanation.",
     "logic": "Give ONLY the final answer, no explanation.",

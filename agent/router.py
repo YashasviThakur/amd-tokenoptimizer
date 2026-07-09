@@ -22,7 +22,8 @@ from . import verifiers as V
 from .backends import extract_final
 from .classifier import HARD, classify
 from .config import config
-from .prompts import build_messages, build_remote_messages, build_retry_messages, max_tokens_for
+from .prompts import (_NO_REASONING_FAMILIES, build_messages, build_remote_messages,
+                      build_retry_messages, max_tokens_for)
 from .solvers import free_solve
 
 # Categories the local model handles reliably (short outputs, fast on CPU).
@@ -103,7 +104,9 @@ def _salvage_strong(category: str, s: str) -> bool:
         except Exception:
             return False
     if category in ("factual", "logic"):
-        return 0 < len(s) <= 120
+        # must contain a real token: a truncated trace's last line was a lone
+        # '-' and the old length-only check submitted it as the final answer
+        return 0 < len(s) <= 120 and bool(re.search(r"[A-Za-z0-9]", s))
     return False
 
 
@@ -114,11 +117,11 @@ def _candidate_models(category: str) -> list[str]:
     models = list(dict.fromkeys(config.allowed_models))  # de-dup, keep order
     if not models:
         # has_remote() can be true off the API key alone (no model list injected):
-        # fall back to the VERBATIM launch-day allow-list (config.fallback_models),
-        # never a prefixed/invented id — one 404ing name = every escalation dead.
-        models = list(dict.fromkeys(
-            ([config.preferred_model] if config.preferred_model else [])
-            + config.fallback_models))
+        # fall back to the VERBATIM launch-day allow-list (config.fallback_models)
+        # ONLY. preferred_model must never be a candidate SOURCE here — a stray
+        # REMOTE_MODEL env var would put an off-list id first = MODEL_VIOLATION
+        # (this team lost two submissions to exactly that class of leak).
+        models = list(dict.fromkeys(config.fallback_models))
     if not models:
         return []
 
@@ -156,9 +159,12 @@ def _candidate_models(category: str) -> list[str]:
     return list(dict.fromkeys(m for m in top if m))
 
 
-# Categories where a single sample can slip on a judgment call (multi-step
-# reasoning, ambiguous labels) and answers normalize into comparable keys.
-_VOTE_CATEGORIES = {"math", "logic", "sentiment"}
+# Categories where a single sample can slip on a judgment call and answers
+# normalize into comparable keys. SENTIMENT REMOVED (audit, executed): on a
+# 3-label space two temp-0.8 draws agree by chance often enough to flip a
+# CORRECT temp-0 anchor on ambiguous reviews — EV-negative there, while
+# math/logic agreement in an open answer space is real evidence.
+_VOTE_CATEGORIES = {"math", "logic"}
 
 
 def _final_line(category: str, ans: str) -> str:
@@ -189,8 +195,74 @@ def _vote_refine(remote, model, msgs, category, max_tok, anchor, time_left) -> s
     samples = [s for s in samples if s]
     if (len(samples) == 2 and _norm(samples[0]) == _norm(samples[1])
             and _norm(samples[0]) != _norm(anchor)):
-        return samples[0]
+        w = samples[0]
+        # numerically equal ("10.0" vs "10", "1,000" vs "1000") is AGREEMENT —
+        # keep the anchor's judge-clean formatting, never swap it for a variant
+        try:
+            if abs(float(_norm(w).replace(",", "")) -
+                   float(_norm(anchor).replace(",", ""))) < 1e-9:
+                return anchor
+        except ValueError:
+            pass
+        # format gate (audit, executed): hot pairs byte-agree most easily on
+        # formulaic wrappers ("The answer is 42.") — a winner must be at least
+        # as judge-clean as the anchor or the override loses exact-match judging
+        if category == "math":
+            if not re.fullmatch(r"-?\d[\d,]*\.?\d*", w.strip().rstrip(".")):
+                return anchor
+        elif len(w) > 120 or not re.search(r"[A-Za-z0-9]", w):
+            return anchor
+        return w
     return anchor
+
+
+# "in exactly 12 words" / "no more than 15 words" — the judge counts; the model
+# doesn't unless made to. Measured: a 15-word cap got 16 words (judged FAIL).
+_WORD_LIMIT = re.compile(
+    r"\b(exactly|no more than|at most|maximum(?: of)?|within|under|fewer than)\s+(\d{1,3})\s+words\b", re.I)
+
+
+def _word_count(s: str) -> int:
+    return len(re.findall(r"[\w'-]+", s or ""))
+
+
+def _enforce_word_limit(remote, model, prompt, ans, time_left) -> str:
+    """Post-check an explicit word limit; one strict same-model retry on violation.
+    Keeps whichever answer satisfies (or comes closer to) the limit — never
+    returns empty, never runs when no limit is stated or time is short."""
+    m = _WORD_LIMIT.search(prompt)
+    if not m:
+        return ans
+    kind = m.group(1).lower()
+    n = int(m.group(2))
+    if kind == "fewer than":
+        exact, n = False, n - 1
+    else:
+        exact = kind == "exactly"
+    wc = _word_count(ans)
+    if (wc == n) if exact else (wc <= n):
+        return ans
+    if time_left is not None and time_left < 8.0:
+        return ans
+    strict = ((f"Write the summary in EXACTLY {n} words." if exact
+               else f"Write the summary in AT MOST {n} words.")
+              + " Output only the summary text, nothing else. Do not count words aloud.")
+    try:
+        out = remote.chat(model, [{"role": "system", "content": strict},
+                                  {"role": "user", "content": prompt}],
+                          max_tokens=max_tokens_for("summarization"), temperature=0.0, n=1,
+                          reasoning_effort=config.reasoning_effort,
+                          timeout=min(time_left, config.request_timeout) if time_left else None)
+    except Exception:
+        return ans
+    cand = (out[0].get("text") or "").strip()
+    if cand and out[0].get("finish") != "length":
+        cw = _word_count(cand)
+        if (cw == n) if exact else (cw <= n):
+            return cand
+        if abs(cw - n) < abs(wc - n):
+            return cand
+    return ans
 
 
 def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0,
@@ -209,6 +281,16 @@ def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0
     messages = builder(category, prompt)  # per-model variant built inside the loop
     max_tok = max_tokens_for(category)
     candidates = _candidate_models(category)
+    word_limited = category == "summarization" and bool(_WORD_LIMIT.search(prompt))
+    if word_limited:
+        # MEASURED: reasoning models (minimax) loop forever counting words —
+        # finish=length with EMPTY content even at a 4096 ceiling — while an
+        # instruct-class model answers in one clean shot (exactly N words at
+        # 768). Reorder (same allowed set, no new ids) so instruct families
+        # (gemma on the grader) take word-limited summaries first.
+        instruct = [m for m in candidates
+                    if any(f in m.lower() for f in _NO_REASONING_FAMILIES)]
+        candidates = instruct + [m for m in candidates if m not in instruct]
     before = remote.meter.total
     last = {"answer": "", "model": "", "error": "no candidates"}
 
@@ -244,8 +326,15 @@ def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0
                 reasoning = out[0].get("reasoning") or ""
                 truncated = finish == "length"
                 if ans and not truncated:  # good clean answer — done
-                    if category in _VOTE_CATEGORIES and not full_prompt:
-                        ans = _vote_refine(remote, model, msgs, category, mt, ans, _time_left())
+                    if not full_prompt:
+                        if category == "summarization":
+                            ans = _enforce_word_limit(remote, model, prompt, ans, _time_left())
+                        elif category in _VOTE_CATEGORIES:
+                            # vote at the BASE ceiling, not mt: after a 1536 truncation
+                            # retry, two hot reasoning traces at mt would bill ~3k
+                            # tokens for a confirmation signal the base ceiling gives
+                            ans = _vote_refine(remote, model, msgs, category,
+                                               max_tokens_for(category), ans, _time_left())
                     return {"task_id": task_id, "answer": ans, "route": "remote",
                             "category": category, "tokens": remote.meter.total - before,
                             "confidence": round(conf, 3), "model": model}
@@ -269,6 +358,9 @@ def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0
                 elif salvage and not last["answer"]:  # trace-extracted floor
                     last = {"answer": salvage, "model": model, "error": "salvaged"}
                 if truncated and mt == max_tok:
+                    if word_limited:
+                        break  # the counting loop won't finish at 3x either
+                        # (measured empty at 4096) — save the ~20s for the next model
                     continue  # retry SAME model at the higher ceiling
                 break  # empty, or already retried high -> fail over to next model
             except Exception as e:

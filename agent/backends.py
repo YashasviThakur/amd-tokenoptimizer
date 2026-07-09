@@ -87,7 +87,13 @@ _FILLER_RE = re.compile(
     r"^(?:is|are|was|were|it is|it's|that is|the answer is|answer is|equal to|equals|:)\s+",
     re.I)
 _PREAMBLE_RE = re.compile(r"(let me|reason|trace|determine|think|first|step|consider|"
-                          r"the passage|condense|core idea|length constraint|summariz|scanning)", re.I)
+                          r"the passage|condense|core idea|length constraint|summariz|scanning|"
+                          # word-count deliberation ("The user wants a summary in exactly 10
+                          # words... That's 14 words, too many. Still over.") leaked as the
+                          # ANSWER when the trace truncated — measured on ~40% of
+                          # exact-word-count tasks.
+                          r"the user wants|count:|try again|word count|"
+                          r"\b\d+\s+words\b|too many|still over|cut (?:down|it))", re.I)
 
 
 def strip_code_fence(text: str) -> str:
