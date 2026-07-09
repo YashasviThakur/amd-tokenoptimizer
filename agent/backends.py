@@ -53,8 +53,11 @@ class Model:
         # a generous read timeout (batched generations legitimately take a while)
         # but fail FAST on connect/pool so a dead/blackholed network can't burn
         # the whole per-task/total time budget on a hung TCP connect.
+        # connect=8s (was 5s): a grading sandbox may route FIREWORKS_BASE_URL through
+        # an internal proxy with extra hops/cold-start latency vs. hitting the public
+        # API directly, and a too-tight connect timeout would fail every single call.
         self._client = httpx.Client(
-            timeout=httpx.Timeout(timeout, connect=5.0, pool=5.0),
+            timeout=httpx.Timeout(timeout, connect=8.0, pool=8.0),
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         )
 

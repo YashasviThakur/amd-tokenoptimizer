@@ -102,8 +102,21 @@ def _build_local():
         return None
 
 
+def _diagnose_env() -> None:
+    """Log the resolved remote config (masked) so a total remote-call failure in
+    a sandbox we can't inspect directly is diagnosable from container stderr
+    instead of guessed at from the aggregate accuracy number alone."""
+    key = config.fireworks_api_key
+    masked = (key[:4] + "…" + key[-2:]) if len(key) > 8 else ("<empty>" if not key else "<short>")
+    print(f"[agent] base_url={config.fireworks_base_url!r} api_key={masked} "
+          f"allowed_models={config.allowed_models!r} preferred_model={config.preferred_model!r} "
+          f"has_remote={config.has_remote()} use_local={config.use_local} "
+          f"reasoning_effort={config.reasoning_effort!r}", file=sys.stderr)
+
+
 def run() -> dict:
     t0 = time.time()
+    _diagnose_env()
     meter = RemoteMeter()
     remote = Model(config.fireworks_base_url, config.fireworks_api_key, config.request_timeout, meter=meter)
     local = _build_local()
@@ -141,10 +154,12 @@ def run() -> dict:
             r = {"task_id": task.get("task_id"), "answer": "", "route": "error",
                  "category": "?", "tokens": 0, "error": str(e)}
         routes[r.get("route", "?")] = routes.get(r.get("route", "?"), 0) + 1
+        if r.get("error"):  # surface remote-call failures immediately, not just in aggregate
+            print(f"[agent] task {r.get('task_id')} ({r.get('category')}) failed: {r['error']}", file=sys.stderr)
         results.append({"task_id": str(r.get("task_id")), "answer": _answer_str(r.get("answer"))})
         meta.append({"task_id": r.get("task_id"), "route": r.get("route"),
                      "category": r.get("category"), "confidence": r.get("confidence"),
-                     "tokens": r.get("tokens") or 0})
+                     "tokens": r.get("tokens") or 0, "error": r.get("error")})
         if i % 8 == 7:  # periodic atomic flush -> a kill leaves a valid partial file
             try:
                 _write_json(config.output_path, results)
