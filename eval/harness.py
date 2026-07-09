@@ -110,6 +110,9 @@ def main():
     ap.add_argument("--gate", type=float, default=0.80)
     ap.add_argument("--profile", choices=["generic", "strong"], default="generic",
                     help="simulated local-model quality (generic 2B vs strong code-capable ~3-4B)")
+    ap.add_argument("--reasoning", action="store_true",
+                    help="GRADER-FAITHFUL mode: remote returns empty content + answer in "
+                         "reasoning_content (reproduces the 26.3%%/36.8%% gate failure locally)")
     ap.add_argument("--tasks", help="path to a tasks.json (default: dev set)")
     ap.add_argument("--expected", help="path to an expected.json (default: dev set)")
     args = ap.parse_args()
@@ -121,6 +124,8 @@ def main():
         _EXPECTED_PATH = Path(args.expected)
     EXPECTED = json.loads(_EXPECTED_PATH.read_text(encoding="utf-8"))
     os.environ["MOCK_LOCAL_PROFILE"] = args.profile
+    if args.reasoning:
+        os.environ["MOCK_REASONING"] = "1"
     _env()
     (HERE / "out").mkdir(exist_ok=True)
     proc = _start_server()

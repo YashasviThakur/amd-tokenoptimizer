@@ -14,10 +14,12 @@ some categories. Per task:
 """
 from __future__ import annotations
 
+import json
 import re
 import time as _time
 
 from . import verifiers as V
+from .backends import extract_final
 from .classifier import HARD, classify
 from .config import config
 from .prompts import build_messages, build_remote_messages, build_retry_messages, max_tokens_for
@@ -77,6 +79,29 @@ def _looks_labeled(ans: str) -> bool:
 _FAMILY_PREF = ("gpt-oss", "gemma", "glm", "deepseek", "qwen", "llama", "mixtral", "phi")
 _DEPRIORITIZE = ("kimi",)
 _SHORT_CATEGORIES = {"sentiment", "math", "factual", "logic"}
+
+
+def _salvage_strong(category: str, s: str) -> bool:
+    """A reasoning-trace extraction confident enough to RETURN immediately (a model
+    that empties `content` behaves the same on every candidate, so failing over just
+    burns tokens for the same result). Only the deterministic categories qualify;
+    code/summarization stay a FLOOR so we still try a possibly-clean-content model."""
+    s = (s or "").strip()
+    if not s:
+        return False
+    if category == "sentiment":
+        return s.lower() in ("positive", "negative", "neutral")
+    if category == "math":
+        return bool(re.fullmatch(r"-?\d[\d,]*\.?\d*", s))
+    if category == "ner":
+        try:
+            json.loads(s)
+            return True
+        except Exception:
+            return False
+    if category in ("factual", "logic"):
+        return 0 < len(s) <= 120
+    return False
 
 
 def _candidate_models(category: str) -> list[str]:
@@ -165,10 +190,19 @@ def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0
                                   reasoning_effort=config.reasoning_effort, timeout=call_timeout)
                 ans = (out[0].get("text") or "").strip()
                 finish = out[0].get("finish")
-                salvage = (out[0].get("salvage") or "").strip()
+                reasoning = out[0].get("reasoning") or ""
                 truncated = finish == "length"
-                if ans and not truncated:  # good answer — done
+                if ans and not truncated:  # good clean answer — done
                     return {"task_id": task_id, "answer": ans, "route": "remote",
+                            "category": category, "tokens": remote.meter.total - before,
+                            "confidence": round(conf, 3), "model": model}
+                # Empty/weak content: the answer is in the reasoning trace (reasoning
+                # model). Extract it PER-CATEGORY (a category-blind grab was the
+                # sentiment/summarization/code gate failure).
+                salvage = (extract_final(category, reasoning).strip() if reasoning
+                           else (out[0].get("salvage") or "").strip())
+                if not ans and salvage and _salvage_strong(category, salvage):
+                    return {"task_id": task_id, "answer": salvage, "route": "remote-reasoning",
                             "category": category, "tokens": remote.meter.total - before,
                             "confidence": round(conf, 3), "model": model}
                 if ans and not last["answer"]:  # truncated partial: floor only

@@ -6,6 +6,7 @@ are the score. Both expose the same .chat() signature so the router is agnostic.
 """
 from __future__ import annotations
 
+import json
 import re
 import sys
 import threading
@@ -78,6 +79,105 @@ def _salvage_answer(trace: str) -> str:
     lines = [ln.strip() for ln in t.splitlines() if ln.strip()]
     last = lines[-1] if lines else ""
     return last if 0 < len(last) <= 160 else ""
+
+
+_SENTIMENT_WORDS = ("positive", "negative", "neutral")
+_FENCE_RE = re.compile(r"```(?:[a-zA-Z0-9_+-]+)?\s*(.*?)```", re.S)
+_FILLER_RE = re.compile(
+    r"^(?:is|are|was|were|it is|it's|that is|the answer is|answer is|equal to|equals|:)\s+",
+    re.I)
+_PREAMBLE_RE = re.compile(r"(let me|reason|trace|determine|think|first|step|consider|"
+                          r"the passage|condense|core idea|length constraint|summariz|scanning)", re.I)
+
+
+def _after_marker(t: str) -> str:
+    """The text after the LAST 'answer/final answer' marker (reasoning restates
+    before concluding, so the last one is the conclusion)."""
+    m = None
+    for m in _ANSWER_MARK.finditer(t):
+        pass
+    if m and m.group(1).strip() and len(m.group(1).strip()) <= 200:
+        return m.group(1).strip()
+    return ""
+
+
+def _strip_filler(s: str) -> str:
+    """'is Au.' -> 'Au': the marker regex can leave a leading copula and trailing
+    punctuation, which fails an exact/label judge check."""
+    s = (s or "").strip().strip("\"'`")
+    prev = None
+    while s != prev:  # 'that is: X' -> peel each filler layer
+        prev = s
+        s = _FILLER_RE.sub("", s).strip()
+    return s.strip().strip(".").strip()
+
+
+def _last_number(t: str) -> str:
+    nums = re.findall(r"-?\d[\d,]*\.?\d*", t or "")
+    return nums[-1].rstrip(".").replace(",", "") if nums else ""
+
+
+def _last_json(t: str) -> str:
+    """The last brace-balanced {...} in the trace that actually parses as JSON."""
+    depth, start, cands = 0, -1, []
+    for i, ch in enumerate(t or ""):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}" and depth > 0:
+            depth -= 1
+            if depth == 0 and start >= 0:
+                cands.append(t[start:i + 1])
+    for c in reversed(cands):
+        try:
+            json.loads(c)
+            return c
+        except Exception:
+            continue
+    return ""
+
+
+def extract_final(category: str, trace: str) -> str:
+    """Category-aware answer extraction from a reasoning trace (used when a
+    reasoning model returns EMPTY content and the answer is only in
+    `reasoning_content`). A category-blind 'last line' grab returns the reasoning
+    sentence for sentiment, an over-length blob for summarization, and nothing for
+    code — the documented gate failure. This recovers the actual answer per type."""
+    t = _THINK.sub("", trace or "").strip()
+    if not t:
+        return ""
+    if category == "sentiment":
+        low = t.lower()
+        found = [(low.rfind(w), w) for w in _SENTIMENT_WORDS if w in low]
+        return max(found)[1] if found else ""
+    if category == "math":
+        return _last_number(t)
+    if category == "ner":
+        return _last_json(t) or _salvage_answer(t)
+    if category in ("code_gen", "code_debug"):
+        fence = _FENCE_RE.findall(t)
+        if fence:
+            return fence[-1].strip()
+        # no fence: drop a leading reasoning-preamble line, keep the rest as code
+        head, _, tail = t.partition("\n")
+        if tail.strip() and _PREAMBLE_RE.search(head):
+            return tail.strip()
+        return t
+    if category == "summarization":
+        mk = _after_marker(t)
+        if mk:
+            return mk
+        # keep the trailing sentence(s), dropping meta-sentences about summarizing
+        parts = re.split(r"(?<=[.!?])\s+", t)
+        keep = [p for p in parts if p.strip() and not _PREAMBLE_RE.search(p)]
+        return (" ".join(keep).strip() or (parts[-1].strip() if parts else t))[:1200]
+    # factual / logic / default
+    mk = _after_marker(t)
+    if mk:
+        return _strip_filler(mk)
+    lines = [ln.strip() for ln in t.splitlines() if ln.strip()]
+    return (lines[-1] if lines else "")[:400]
 
 
 def _fold_system(messages: list[dict]) -> list[dict]:
@@ -227,7 +327,11 @@ class Model:
         results = []
         for c in data["choices"]:
             text, reasoning = _extract_message_text(c)
+            # Raw reasoning is returned so the router can extract a category-aware
+            # answer when content is empty (reasoning-model behavior). `salvage`
+            # stays as a category-blind floor for callers that don't pass a category.
             results.append({"text": text, "finish": c.get("finish_reason"),
+                            "reasoning": reasoning if not text else "",
                             "salvage": "" if text else _salvage_answer(reasoning)})
         if self.meter is not None:
             usage = data.get("usage") or {}

@@ -39,6 +39,41 @@ LOCAL_COMPETENCE = COMPETENCE_PROFILES.get(os.getenv("MOCK_LOCAL_PROFILE", "gene
                                            COMPETENCE_PROFILES["generic"])
 REMOTE_COMPETENCE = 0.96
 
+# GRADER-FAITHFUL MODE: the real judging proxy fronts *reasoning* models that put
+# the answer in `reasoning_content` and leave `content` EMPTY (documented as the
+# 26.3%/36.8% failure). The public Fireworks API and the default mock both return
+# clean `content`, so this failure NEVER shows up locally. MOCK_REASONING=1 makes
+# the simulated remote model behave like the grader: empty content, answer buried
+# in a realistic reasoning trace, and reasoning tokens billed as completion tokens.
+REASONING = os.getenv("MOCK_REASONING", "0").strip().lower() in ("1", "true", "yes")
+
+
+def _reasoning_trace(category: str, answer: str) -> str:
+    """Wrap the answer in a realistic chain-of-thought whose FINAL line/marker is
+    the answer — but where naive 'last line' or 'whole trace' extraction fails
+    (esp. sentiment: the answer word is embedded mid-sentence, not alone)."""
+    a = answer or ""
+    first = a.splitlines()[0] if a else a  # short inline answers (word/number)
+    if category == "sentiment":
+        return (f"Let me read the text carefully. It expresses clear emotion and "
+                f"some strong wording. Weighing the cues on balance, the overall "
+                f"sentiment here comes across as {first}. So I'll go with {first}.")
+    if category == "math":
+        return (f"Let me work through this step by step, carefully checking each "
+                f"operation. After doing the arithmetic, the result comes out to {first}.")
+    if category == "ner":
+        return (f"Scanning the passage for named entities — people, organizations, "
+                f"locations, and dates. Collecting them into the required schema.\n{a}")
+    if category == "summarization":
+        return (f"The passage makes several points; let me identify the core idea "
+                f"and condense it while honoring the length constraint.\n\n{a}")
+    if category in ("code_debug", "code_gen"):
+        return (f"Let me reason about the code, trace the logic, and determine the "
+                f"correct fix before writing it out.\n\n```python\n{a}\n```")
+    return (f"Let me think about this carefully and recall the relevant facts. "
+            f"Considering everything, the final answer is {first}.")
+
+
 app = FastAPI()
 
 
@@ -47,6 +82,26 @@ def _last_user(messages):
         if m.get("role") == "user":
             return m.get("content", "")
     return messages[-1].get("content", "") if messages else ""
+
+
+# Prompts sorted longest-first so a containment match picks the most specific task.
+_PROMPTS_BY_LEN = sorted(PROMPT_TO_ID, key=len, reverse=True)
+
+
+def _match_task(user: str) -> str | None:
+    """Map a user turn to a task id. The agent FOLDS the system prompt into the
+    user turn (_fold_system) and COMPRESSES whitespace before sending, so an exact
+    lookup misses — the mock would return 'I don't know' for every real call and
+    silently score 0. Match by containment (longest prompt first) so folded /
+    compressed / reformatted prompts still resolve to the right task, exactly as a
+    real judged model would answer the underlying question."""
+    if user in PROMPT_TO_ID:
+        return PROMPT_TO_ID[user]
+    norm = re.sub(r"\s+", " ", user or "").strip()
+    for p in _PROMPTS_BY_LEN:
+        if p in user or re.sub(r"\s+", " ", p).strip() in norm:
+            return PROMPT_TO_ID[p]
+    return None
 
 
 def _simulate(task_id: str, exp: dict, is_local: bool, model: str, i: int) -> str:
@@ -67,10 +122,11 @@ async def chat(request: Request):
 
     # batched request? lines like "N) <prompt>" -> reply "N) <answer>"
     items = re.findall(r"(?m)^\s*(\d+)\)\s*(.+?)\s*$", user)
+    category = "factual"
     if len(items) >= 2:
         out = []
         for num, ptext in items:
-            tid = PROMPT_TO_ID.get(ptext.strip())
+            tid = _match_task(ptext.strip())
             if tid is None:
                 out.append(f"{num}) unknown")
             else:
@@ -78,23 +134,37 @@ async def chat(request: Request):
                 out.append(f"{num}) {ans}")
         contents = ["\n".join(out)]
     else:
-        task_id = PROMPT_TO_ID.get(user)
+        task_id = _match_task(user)
         if task_id is None:
             contents = ["I don't know." for _ in range(n)]
         else:
             exp = EXPECTED[task_id]
+            category = exp.get("category", "factual")
             contents = [_simulate(task_id, exp, is_local, model, i) for i in range(n)]
 
+    # Grader-faithful reasoning models: empty `content`, answer inside
+    # `reasoning_content`. Only the REMOTE model behaves this way (a local GGUF
+    # returns plain content). Billed tokens count the reasoning trace, exactly as
+    # the real proxy does — so the token score stays realistic too.
+    reasoning_mode = REASONING and not is_local
+    choices, billed = [], []
+    for i, c in enumerate(contents):
+        if reasoning_mode:
+            trace = _reasoning_trace(category, c)
+            msg = {"role": "assistant", "content": "", "reasoning_content": trace}
+            billed.append(trace)
+        else:
+            msg = {"role": "assistant", "content": c}
+            billed.append(c)
+        choices.append({"index": i, "message": msg, "finish_reason": "stop"})
+
     prompt_tokens = count_messages(messages)
-    completion_tokens = sum(count_tokens(c) for c in contents)
+    completion_tokens = sum(count_tokens(b) for b in billed)
     return {
         "id": "mock-cmpl",
         "object": "chat.completion",
         "model": model,
-        "choices": [
-            {"index": i, "message": {"role": "assistant", "content": c}, "finish_reason": "stop"}
-            for i, c in enumerate(contents)
-        ],
+        "choices": choices,
         "usage": {
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
