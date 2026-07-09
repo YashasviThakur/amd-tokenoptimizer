@@ -50,16 +50,12 @@ jobs:
           print("solver answers:", [x["answer"] for x in d])
           PY
 
-      - name: Local-model smoke (bundled GGUF must load and answer)
+      - name: Image is slim (no bundled model — assert well under the size cap)
         run: |
-          docker run --rm -i --entrypoint python \
-            ghcr.io/${OWNER}/${IMAGE}:latest - <<'PY'
-          from agent.backends import LocalModel
-          m = LocalModel("/models/qwen2.5-3b-instruct-q4_k_m.gguf", n_ctx=1024, n_threads=2)
-          out = m.chat("local", [{"role": "user", "content": "Reply with the word OK."}], max_tokens=8)
-          assert out and out[0] and out[0].strip(), f"empty local answer: {out!r}"
-          print("local model answered:", out[0][:40])
-          PY
+          BYTES=$(docker image inspect ghcr.io/${OWNER}/${IMAGE}:latest --format '{{.Size}}')
+          MB=$((BYTES/1024/1024))
+          echo "image size: ${MB} MB"
+          test "$MB" -lt 800 || { echo "image unexpectedly large (${MB}MB) — a model may have leaked in"; exit 1; }
 
       - name: Log in to GHCR
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
