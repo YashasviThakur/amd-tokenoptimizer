@@ -196,15 +196,22 @@ class LocalModel:
         from llama_cpp import Llama  # lazy: only the local-enabled image ships it
         self.llm = Llama(model_path=model_path, n_ctx=n_ctx, n_threads=n_threads,
                          n_batch=256, verbose=False)
+        # main.py routes tasks from a thread pool (max_workers=8), but a llama.cpp
+        # context is NOT thread-safe: two concurrent generations share one KV cache
+        # and corrupt each other — or segfault, an uncatchable native fault that
+        # kills the process mid-batch (= zero score). Serialize every generation;
+        # the 2-vCPU grading box couldn't run two at once any faster anyway.
+        self._lock = threading.Lock()
 
     def chat(self, model, messages, max_tokens: int = 128, temperature: float = 0.0,
              n: int = 1, reasoning_effort=None) -> list[str]:
         """Return n completions. n>1 = self-consistency samples (varied seed + a
         little temperature); the router treats agreement as a free signal."""
         outs = []
-        for i in range(max(1, n)):
-            temp = temperature if n == 1 else max(temperature, 0.4)
-            r = self.llm.create_chat_completion(
-                messages=messages, max_tokens=max_tokens, temperature=temp, seed=1234 + i)
-            outs.append(r["choices"][0]["message"]["content"])
+        with self._lock:
+            for i in range(max(1, n)):
+                temp = temperature if n == 1 else max(temperature, 0.4)
+                r = self.llm.create_chat_completion(
+                    messages=messages, max_tokens=max_tokens, temperature=temp, seed=1234 + i)
+                outs.append(r["choices"][0]["message"]["content"])
         return outs

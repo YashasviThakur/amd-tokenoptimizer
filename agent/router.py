@@ -31,19 +31,23 @@ RETRY_CATEGORIES = {"ner", "summarization", "sentiment"}
 
 # Base trust per category for a ~3B local model (measured on the practice set:
 # reliable on sentiment/summary/ner, poor on math/logic/code).
-# factual is deliberately LOW: it has no correctness verifier and self-consistency
-# only measures variance, so a stable hallucination (both draws agree on the same
-# wrong fact) would be kept at 0 tokens — a gate risk. At 0.35, even two agreeing
-# draws (0.35+0.20=0.55) stay < escalate_threshold, so every factual task escalates
-# to Fireworks (accurate) at a small token cost. Gate safety > a few tokens.
+# factual sits at 0.55: a LONE draw stays below the 0.60 threshold (still
+# escalates — same gate-safe behavior as before), but two AGREEING draws
+# (self-consistency, LOCAL_SAMPLES_HARD=2) reach 0.75 and are kept for 0 tokens.
+# Agreement is the hallucination guard the category otherwise lacks (no cheap
+# correctness verifier); a disagreeing pair lands at 0.25 and escalates. Measured
+# 100% local on dev factual — the biggest single token reclaim after the solvers.
 PRIOR = {
-    "sentiment": 0.82, "summarization": 0.72, "ner": 0.74, "factual": 0.35,
+    "sentiment": 0.82, "summarization": 0.72, "ner": 0.74, "factual": 0.55,
     "math": 0.28, "logic": 0.28, "code_debug": 0.33, "code_gen": 0.38,
 }
 
 
 def _norm(s: str) -> str:
-    return re.sub(r"\s+", " ", (s or "").strip().lower())
+    # trailing punctuation is stripped so "Paris" and "Paris." count as AGREEING
+    # self-consistency draws — a false disagreement needlessly escalates (tokens).
+    t = re.sub(r"\s+", " ", (s or "").strip().lower())
+    return re.sub(r"[\s.!?]+$", "", t)
 
 
 def _confidence(category: str, prompt: str, samples: list[str]) -> float:
@@ -166,6 +170,31 @@ def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0
             "model": last["model"], "error": None if answer else last["error"]}
 
 
+def _local_rescue(task_id, category, prompt, local, deadline) -> dict | None:
+    """Last-resort LOCAL answer after every remote candidate failed (dead gateway).
+
+    Only runs when enough per-task budget remains — a dead gateway fails fast
+    (1-3s of the 28s budget), leaving room; a slow-timeout failure doesn't, and
+    we skip rather than blow the <30s/task limit. Output is capped small for CPU
+    speed. A short answer that's sometimes right strictly beats the empty answer
+    (always wrong) we'd otherwise emit. Free: the failed calls metered ~nothing."""
+    remaining = deadline - _time.time()
+    if remaining < 10.0:
+        return None
+    try:
+        samples = local.chat(config.local_model_path, build_messages(category, prompt),
+                             max_tokens=min(max_tokens_for(category), 256),
+                             temperature=0.0, n=1)
+        ans = (samples[0] or "").strip() if samples else ""
+    except Exception:
+        return None
+    if not ans:
+        return None
+    return {"task_id": task_id, "answer": ans, "route": "local-rescue",
+            "category": category, "tokens": 0,
+            "confidence": round(PRIOR.get(category, 0.5), 3)}
+
+
 def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
     """Return {task_id, answer, route, category, tokens, confidence}.
 
@@ -195,12 +224,25 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
                 "category": category, "tokens": 0, "confidence": 1.0}
 
     have_local = bool(local) and config.use_local
+    # LOCAL_ONLY: the zero-token mode — never touch Fireworks; solvers + the local
+    # model answer everything (0 tokens is the unbeatable floor of an ascending-
+    # token leaderboard). Only honored when the local model actually loaded, so a
+    # bad flag can never strand every task with no answerer at all.
+    remote_ok = config.has_remote() and not (config.local_only and have_local)
     # 2) hard categories / near-deadline / no local / very long prompt -> Fireworks.
     # A long prompt means slow CPU prefill on 2 vCPU, which risks the <30s/task
     # limit, so escalate it instead of grinding locally.
     too_long = len(prompt) > config.local_max_prompt_chars
-    if config.has_remote() and (prefer_remote or not have_local or category in HARD or too_long):
-        return _fireworks(task_id, category, prompt, remote, deadline=deadline)
+    if remote_ok and (prefer_remote or not have_local or category in HARD or too_long):
+        r = _fireworks(task_id, category, prompt, remote, deadline=deadline)
+        # Dead-remote rescue: every candidate failed with nothing to show (the
+        # grader's Fireworks access being down does exactly this) -> a local answer
+        # strictly beats the empty one we'd otherwise emit, and costs 0 tokens.
+        if r["route"] == "error" and have_local:
+            rescue = _local_rescue(task_id, category, prompt, local, deadline)
+            if rescue is not None:
+                return rescue
+        return r
 
     # 3) local answer for the categories a small model handles well
     if have_local:
@@ -232,8 +274,8 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
 
         # 4) escalate low-confidence local answer to Fireworks — but pass the local
         # answer as a fallback so a dead-remote grader can't turn a usable local
-        # answer into an empty (0-credit) one.
-        if config.has_remote():
+        # answer into an empty (0-credit) one. Skipped entirely in LOCAL_ONLY mode.
+        if remote_ok:
             return _fireworks(task_id, category, prompt, remote, conf=conf, deadline=deadline,
                               local_fallback=(samples[0].strip() if samples else ""))
 

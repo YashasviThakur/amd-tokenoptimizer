@@ -66,6 +66,12 @@ class Config:
     # risks the <30s/task limit) and escalate to Fireworks instead.
     local_max_prompt_chars: int = int(os.getenv("LOCAL_MAX_PROMPT_CHARS", "2000"))
 
+    # ZERO-TOKEN mode: never call Fireworks — solvers + the bundled local model
+    # answer everything. 0 tokens is the unbeatable floor of an ascending-token
+    # leaderboard; flip on ONLY once the leaderboard confirms local-only accuracy
+    # clears the gate. Ignored if the local model failed to load (a bad flag must
+    # never strand every task with no answerer).
+    local_only: bool = os.getenv("LOCAL_ONLY", "0").strip().lower() in ("1", "true", "yes")
     # Keep a local answer when confidence >= this; else escalate to Fireworks.
     escalate_threshold: float = float(os.getenv("ESCALATE_THRESHOLD", "0.60"))
     # httpx read timeout. 26s (was 14): a reasoning model's trace can legitimately

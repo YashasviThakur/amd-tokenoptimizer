@@ -55,13 +55,21 @@ COPY agent ./agent
 #   Fireworks is only an escalation and, if it's dead in the grader, the router
 #   keeps the local answer instead of an empty one.
 # DISABLE_SOLVERS=0: solvers ON (the earlier =1 was a temporary diagnostic).
+# LOCAL_THREADS=2: matches the 2-vCPU grading cgroup. 0 (= all cores) reads the
+#   HOST's core count through the cgroup and oversubscribes, slowing inference.
+# LOCAL_SAMPLES_HARD=2: factual self-consistency — two agreeing draws are kept
+#   locally (0 tokens); a lone or disagreeing draw still escalates (gate-safe).
+# LOCAL_ONLY=0: flip to 1 for the ZERO-token mode (never call Fireworks) once the
+#   leaderboard confirms local-only accuracy clears the gate. Do not flip blind.
 # REMOTE_MODEL is the escalation fallback if the harness injects no ALLOWED_MODELS.
 ENV INPUT_PATH=/input/tasks.json \
     OUTPUT_PATH=/output/results.json \
     USE_LOCAL=1 \
     DISABLE_SOLVERS=0 \
+    LOCAL_ONLY=0 \
     LOCAL_MODEL_PATH=/models/qwen2.5-3b-instruct-q4_k_m.gguf \
-    LOCAL_THREADS=0 \
+    LOCAL_THREADS=2 \
+    LOCAL_SAMPLES_HARD=2 \
     REASONING_EFFORT=low \
     REMOTE_MODEL=accounts/fireworks/models/gemma-4-31b-it
 
