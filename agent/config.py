@@ -40,8 +40,12 @@ class Config:
 
     # Preferred remote model (used if present in ALLOWED_MODELS), else first allowed.
     preferred_model: str = os.getenv("REMOTE_MODEL", "")
-    # Frontier models are reasoning models — 'low' trims reasoning tokens (the score)
-    # while keeping accuracy on the hard tasks we escalate. Ignored if unsupported.
+    # Measured: WITHOUT this, unconstrained reasoning ran long enough to hit a real
+    # 14s read timeout on a live call (confirmed, not hypothetical) — a worse
+    # failure mode than the one this was meant to guard against. WITH it (low),
+    # generation stayed fast and correct across 96 real Fireworks calls (95.8%
+    # accuracy, ~5s/call avg). Keep it on; backends.py now retries without it on
+    # ANY 4xx (not just 400) if the harness's specific model ever rejects it.
     reasoning_effort: str = os.getenv("REASONING_EFFORT", "low")
 
     # Local model (bundled in the image; llama-cpp-python, CPU). Local answers cost

@@ -16,18 +16,23 @@ from __future__ import annotations
 # budget and the answer is truncated away (finish_reason=length) -> judged wrong,
 # which is exactly what failed the accuracy gate at 15.8%. These ceilings give the
 # reasoning room to finish; cheap models (gpt-oss) still stop in ~25-70 tokens.
+# reasoning_effort now defaults OFF (see config.py) — without it trimming the
+# trace, reasoning length is less predictable, so short-answer categories need
+# real headroom too (sentiment was measured truncating at 256). 512 uniformly
+# for short answers; only a live-measured 84% NovaAI-level competitor needs
+# these numbers cut further, and that's a token-optimization pass, not a gate one.
 POLICY = {
-    "factual":       ("Answer correctly and concisely. Output only the answer, no preamble.", 256),
+    "factual":       ("Answer correctly and concisely. Output only the answer, no preamble.", 512),
     "math":          ("Solve the problem. Output only the final numeric answer, nothing else.", 512),
-    "sentiment":     ("Classify the sentiment. Reply with exactly one word: positive, negative, or neutral.", 256),
-    "summarization": ("Summarize as instructed, honoring any length constraint. Output only the summary.", 384),
+    "sentiment":     ("Classify the sentiment. Reply with exactly one word: positive, negative, or neutral.", 512),
+    "summarization": ("Summarize as instructed, honoring any length constraint. Output only the summary.", 512),
     "ner":           ('Extract named entities. Output ONLY minified JSON with keys '
-                      '"person","org","location","date" (each a list of strings).', 384),
+                      '"person","org","location","date" (each a list of strings).', 512),
     "code_debug":    ("Fix the bug. Output only the corrected code, no explanation.", 1024),
     "logic":         ("Solve the puzzle. Reason internally, then output only the final answer.", 512),
     "code_gen":      ("Write the function to spec. Output only the code, no explanation.", 1024),
 }
-DEFAULT = ("Answer correctly and concisely. Output only the answer.", 256)
+DEFAULT = ("Answer correctly and concisely. Output only the answer.", 512)
 
 
 def system_for(category: str) -> str:

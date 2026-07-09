@@ -76,10 +76,10 @@ class Model:
         for attempt in range(2):
             try:
                 r = self._client.post(url, json=payload)
-                if r.status_code == 400 and "reasoning_effort" in payload:
-                    # ANY 400 while this param is present: retry without it. A model
-                    # that rejects reasoning_effort with a differently-worded error
-                    # must not fall through to an empty answer (gate risk).
+                if r.status_code >= 400 and r.status_code < 500 and "reasoning_effort" in payload:
+                    # ANY 4xx while this param is present: retry without it. A gateway
+                    # that rejects an unrecognized field could use any 4xx code, not
+                    # just 400 — falling through to an empty answer is a gate risk.
                     payload.pop("reasoning_effort")
                     r = self._client.post(url, json=payload)
                 if r.status_code >= 500:
