@@ -169,7 +169,7 @@ def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0
     local answer instead of an empty string. An empty answer is 0 credit (definitely
     wrong); the local answer is sometimes right. Never discard it for an empty remote."""
     builder = build_messages if full_prompt else build_remote_messages
-    messages = builder(category, prompt)
+    messages = builder(category, prompt)  # per-model variant built inside the loop
     max_tok = max_tokens_for(category)
     candidates = _candidate_models(category)
     before = remote.meter.total
@@ -195,9 +195,19 @@ def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0
                 break
             call_timeout = min(rem, config.request_timeout) if rem else None
             try:
-                out = remote.chat(model, messages, max_tokens=mt, temperature=0.0, n=1,
+                # prompt is MODEL-AWARE: a no-reasoning-channel family (gemma…) gets
+                # a CoT prompt for math/logic — "final answer only" forbids the
+                # thinking those tasks need on a plain instruct model.
+                msgs = messages if full_prompt else build_remote_messages(category, prompt, model)
+                out = remote.chat(model, msgs, max_tokens=mt, temperature=0.0, n=1,
                                   reasoning_effort=config.reasoning_effort, timeout=call_timeout)
                 ans = (out[0].get("text") or "").strip()
+                if ans and category in ("math", "logic") and "FINAL:" in ans:
+                    # CoT answer: keep only the marked final line (the reasoning
+                    # stays out of the submitted answer)
+                    tail = ans.rsplit("FINAL:", 1)[-1].strip()
+                    if tail:
+                        ans = tail.splitlines()[0].strip()
                 finish = out[0].get("finish")
                 reasoning = out[0].get("reasoning") or ""
                 truncated = finish == "length"

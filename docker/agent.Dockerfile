@@ -50,17 +50,14 @@ COPY agent ./agent
 #   grader injects, VERBATIM. Baking a preferred id (gpt-oss-120b) merged it into the
 #   resolved allow-list and got it called first -> MODEL_VIOLATION when the grader's
 #   list didn't include it. The grader supplies the model list at eval; we never guess.
-# DISABLE_SOLVERS=1 (gate-pass mode): EVERY task goes to the model. Seven verified
-#   solver misfires were fixed and the score moved only 12/19 -> 13/19 — hidden-set
-#   phrasings we cannot enumerate keep slipping through regex solvers as confident
-#   wrong answers at 0 tokens. The model measured 94.8-95.8% end-to-end; ~2 extra
-#   remote tasks cost ~500 tokens, qualification is worth everything. The flag is
-#   key-gated (config.py), so the offline CI selftest/smoke still answer via solvers.
+# DISABLE_SOLVERS=0: MEASURED on the hidden set — the all-remote experiment scored
+#   12/19 where the same code with solvers ON scored 13/19: the (misfire-fixed)
+#   solvers win at least one task the model fumbles. Keep them.
 ENV INPUT_PATH=/input/tasks.json \
     OUTPUT_PATH=/output/results.json \
     REMOTE_FIRST=1 \
     USE_LOCAL=0 \
-    DISABLE_SOLVERS=1 \
+    DISABLE_SOLVERS=0 \
     LOCAL_ONLY=0 \
     REASONING_EFFORT= \
     REQUEST_TIMEOUT=22 \

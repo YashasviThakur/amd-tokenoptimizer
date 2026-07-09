@@ -68,6 +68,18 @@ REMOTE_SYSTEM = {
 }
 
 
+# Families with NO hidden reasoning channel (plain instruct models). For them,
+# "give ONLY the final answer" on a multi-step problem forbids the thinking the
+# task needs — reasoning models (minimax/kimi/gpt-oss/deepseek) think in
+# reasoning_content regardless, so the terse prompt only affects these.
+_NO_REASONING_FAMILIES = ("gemma", "llama", "mixtral", "mistral", "phi", "qwen")
+# CoT categories: multi-step ones where visible reasoning changes the answer.
+# code_* excluded (the required output IS the code; FINAL-line format doesn't fit).
+_COT_CATEGORIES = {"math", "logic"}
+_COT_SYSTEM = ("Solve step by step, briefly. Then give the final answer on its "
+               "own last line, formatted exactly as: FINAL: <answer>")
+
+
 def _compress(text: str) -> str:
     """Trim trailing whitespace and collapse blank lines — saves prompt tokens
     without touching code indentation or meaning."""
@@ -84,9 +96,14 @@ def _compress(text: str) -> str:
     return "\n".join(out).strip()
 
 
-def build_remote_messages(category: str, prompt: str) -> list[dict]:
+def build_remote_messages(category: str, prompt: str, model: str = "") -> list[dict]:
+    lm = (model or "").lower()
+    if category in _COT_CATEGORIES and any(f in lm for f in _NO_REASONING_FAMILIES):
+        system = _COT_SYSTEM
+    else:
+        system = REMOTE_SYSTEM.get(category, "Answer only.")
     return [
-        {"role": "system", "content": REMOTE_SYSTEM.get(category, "Answer only.")},
+        {"role": "system", "content": system},
         {"role": "user", "content": _compress(prompt)},
     ]
 
