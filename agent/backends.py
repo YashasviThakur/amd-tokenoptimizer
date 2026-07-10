@@ -297,7 +297,7 @@ class Model:
 
     def chat(self, model: str, messages: list[dict], max_tokens: int = 128,
              temperature: float = 0.0, n: int = 1, reasoning_effort: str | None = None,
-             timeout: float | None = None) -> list[dict]:
+             timeout: float | None = None, thinking_off: bool = False) -> list[dict]:
         """One chat-completion call. Returns [{"text": <clean answer or "">,
         "finish": <finish_reason>, "salvage": <answer extracted from a reasoning
         trace, only when text is empty>}] — the router uses `finish` to detect
@@ -313,6 +313,12 @@ class Model:
             payload["n"] = n
         if reasoning_effort:
             payload["reasoning_effort"] = reasoning_effort
+        if thinking_off:
+            # minimax-m3: skips the reasoning trace (~90% of its completion bill)
+            # and answers directly. MEASURED SAFE only for soft categories
+            # (sentiment/factual/ner/summarization — identical answers, ~85
+            # tok/task cheaper); math/logic answers become guesses without it.
+            payload["thinking"] = {"type": "disabled"}
 
         url = f"{self.base_url}/chat/completions"
         post_kw = {"json": payload}
@@ -332,10 +338,11 @@ class Model:
             try:
                 r = self._client.post(url, **post_kw)
                 if (400 <= r.status_code < 500 and r.status_code != 429
-                        and "reasoning_effort" in payload):
-                    # gateway may reject the non-standard field with any 4xx —
-                    # drop it and try once more before giving up on the model.
-                    payload.pop("reasoning_effort")
+                        and ("reasoning_effort" in payload or "thinking" in payload)):
+                    # gateway may reject the non-standard fields with any 4xx —
+                    # drop them and try once more before giving up on the model.
+                    payload.pop("reasoning_effort", None)
+                    payload.pop("thinking", None)
                     r = self._client.post(url, **post_kw)
                 if r.status_code == 429 or r.status_code >= 500:
                     if attempt == 0:

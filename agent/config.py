@@ -176,6 +176,13 @@ class Config:
     # gemma 404s, the router falls back to minimax (same 16, ~0 wasted tokens).
     force_instruct_first: bool = os.getenv("FORCE_INSTRUCT_FIRST", "0").strip().lower() in ("1", "true", "yes")
 
+    # TOKEN PLAY 2: minimax-m3 'thinking: disabled' on SOFT categories only
+    # (sentiment/factual/ner/summarization). Measured on the real API: identical
+    # correct answers at ~85 fewer tokens/task; math/logic WRONG without thinking
+    # (138 vs 144; Jo vs Sam) so hard categories always keep it on. The param is
+    # dropped-and-retried on 4xx if a proxy rejects it (backends.chat).
+    thinking_off_soft: bool = os.getenv("THINKING_OFF_SOFT", "0").strip().lower() in ("1", "true", "yes")
+
     # Raise every category's max_tokens ceiling to at least this. The per-category
     # ceilings are token-rank optimizations — but minimax THINKS in completion
     # tokens, and a hard task can legitimately need 2-4k of reasoning before the
