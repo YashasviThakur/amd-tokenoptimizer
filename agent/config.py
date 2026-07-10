@@ -165,6 +165,11 @@ class Config:
     # Baseline switch used by the eval harness: force every task to Fireworks.
     force_remote: bool = os.getenv("FORCE_REMOTE", "0").strip().lower() in ("1", "true", "yes")
 
+    # Set by main._resolve_models when GET /models CONFIRMED which allowed models
+    # the grader proxy actually serves. Routing may prefer instruct families only
+    # on this proof — never on guesswork (gemma is unverifiable from outside).
+    models_verified: bool = False
+
     def has_remote(self) -> bool:
         # Remote is usable if we can reach Fireworks at all. Gating this on the
         # model list alone meant a missing/renamed ALLOWED_MODELS silently routed

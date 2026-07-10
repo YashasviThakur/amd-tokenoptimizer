@@ -136,12 +136,18 @@ def _resolve_models(remote) -> None:
     inter = [m for m in configured if m in served]
     if inter:
         config.allowed_models = inter
+        # PROOF of what the proxy serves: routing may now prefer the stable
+        # instruct family (gemma) over reasoning models — but only on this
+        # verification, never on guesswork (see router._candidate_models).
+        config.models_verified = True
     elif not configured:
         config.allowed_models = served
+        config.models_verified = True
     else:
         print(f"[agent] configured models {configured[:8]} not in /models catalog; "
               f"KEEPING them verbatim (allow-list is authoritative)", file=sys.stderr)
-    print(f"[agent] resolved models: {config.allowed_models[:8]}", file=sys.stderr)
+    print(f"[agent] resolved models: {config.allowed_models[:8]} "
+          f"verified={config.models_verified}", file=sys.stderr)
 
 
 def run() -> dict:

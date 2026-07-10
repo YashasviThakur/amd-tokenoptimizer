@@ -67,6 +67,6 @@ ENV INPUT_PATH=/input/tasks.json \
     PER_TASK_BUDGET_S=28 \
     RUN_DEADLINE_S=420 \
     MAX_WORKERS=3 \
-    MODEL_DISCOVERY=0
+    MODEL_DISCOVERY=1
 
 ENTRYPOINT ["python", "-m", "agent.main"]

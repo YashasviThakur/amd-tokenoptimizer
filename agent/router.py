@@ -136,6 +136,20 @@ def _candidate_models(category: str) -> list[str]:
         return (1 if depr else 0, pref, models.index(m))
 
     ordered = sorted(models, key=rank)
+    # STABILITY PLAY, gated on PROOF: when /models discovery has VERIFIED which
+    # allowed models the proxy serves (config.models_verified), lead with the
+    # instruct family everywhere. Reasoning models carry three per-run
+    # pathologies (empty content -> salvage, slow generation -> timeout, trace
+    # truncation) that fire randomly and cost ~1-2 tasks per run — the measured
+    # 13<->14 wobble — while instruct models always return content fast (the
+    # stable-16 qualifier profile). Math/logic on instruct models get the CoT +
+    # 'FINAL:' prompt automatically (build_remote_messages is model-aware).
+    # Without verification this is a no-op: minimax stays first (measured).
+    if config.models_verified:
+        instruct = [m for m in ordered
+                    if any(f in m.lower() for f in _NO_REASONING_FAMILIES)]
+        if instruct:
+            ordered = instruct + [m for m in ordered if m not in instruct]
     # honor an explicit preference first, if it's actually allowed — except for
     # code tasks, where a code-specialist model (rank puts it first) wins.
     if (config.preferred_model and config.preferred_model in ordered
