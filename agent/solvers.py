@@ -42,6 +42,35 @@ _ATTRS = [
 ]
 
 
+# ── word-numbers + rate/direction helpers (all used by the conservative solvers
+# below; every one of those solvers still returns None unless it fully proves) ──
+_WORDNUM = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+    "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
+    "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
+    "nineteen": 19, "twenty": 20,
+}
+_NUMTOK = (r"\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|"
+           r"twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty")
+
+
+def _to_num(tok):
+    tok = (tok or "").strip().lower()
+    if re.fullmatch(r"\d+(?:\.\d+)?", tok):
+        return float(tok)
+    return float(_WORDNUM[tok]) if tok in _WORDNUM else None
+
+
+# increase / decrease cue words, scanned only INSIDE a clause that has a "%" —
+# used to give each step of a compound-percent problem a proven direction.
+_INC_RE = re.compile(r"rais\w*|increas\w*|\bgrew\b|grow\w*|\brose\b|\brises?\b|rising|"
+                     r"mark\w*\s+up|markup|appreciat\w*|go(?:es)?\s+up|went\s+up|higher|hike[sd]?")
+_DEC_RE = re.compile(r"discount\w*|reduc\w*|lower\w*|decreas\w*|drop\w*|\bfell\b|fall\w*|"
+                     r"mark\w*\s+down|markdown|cheaper|slash\w*|depreciat\w*|\bcut\b|"
+                     r"taken?\s+off|\boff\b|\bless\b")
+_ORD = {"second": 2, "2nd": 2, "third": 3, "3rd": 3}
+
+
 def _fmt(x: float) -> str:
     if isinstance(x, float) and x.is_integer():
         return str(int(x))
@@ -345,10 +374,355 @@ def solve_math_extra(prompt: str) -> str | None:
     return None
 
 
+def solve_compound_percent(prompt: str) -> str | None:
+    """Two sequential percentage changes on one base amount -> final value.
+
+    'raise a $200 item by 10%, then lower it by 10%' = 200*1.10*0.90 = 198.
+    Fires ONLY when: exactly one currency base, exactly two '%' figures, the
+    question asks for the FINAL/NET/RESULTING value (not a delta/percent/saving),
+    and the prompt splits (on then/later/…) into exactly two change-clauses each
+    with a single '%' and a single, unambiguous direction. Anything else defers.
+    """
+    p = prompt.lower().replace(",", "")
+    if re.search(r"\bcents?\b", p):
+        return None  # a cents/dollars unit conversion — don't guess the scale
+    if not re.search(r"\bfinal\b|\bresulting\b|\bnet\b|\bend(?:s)? up\b", p):
+        return None
+    if re.search(r"what percent|by how much|how much (?:more|less|higher|lower)|"
+                 r"\bdifference\b|\bsavings?\b|\bsaved?\b|how much did", p):
+        return None  # asks for a delta/percent, not the final amount
+    money = [m[0] or m[1] for m in
+             re.findall(r"\$\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*dollars?\b", p)]
+    pcts = re.findall(r"(\d+(?:\.\d+)?)\s*%", p)
+    if len(money) != 1 or len(pcts) != 2:
+        return None
+    base = float(money[0])
+    parts = re.split(r"\bthen\b|\blater\b|\bfollowed by\b|\bafter (?:that|which)\b|;", p)
+    change_parts = [seg for seg in parts if re.search(r"\d+(?:\.\d+)?\s*%", seg)]
+    if len(change_parts) != 2:
+        return None
+    factor = 1.0
+    for seg in change_parts:
+        if len(re.findall(r"(\d+(?:\.\d+)?)\s*%", seg)) != 1:
+            return None
+        pct = float(re.search(r"(\d+(?:\.\d+)?)\s*%", seg).group(1))
+        inc, dec = bool(_INC_RE.search(seg)), bool(_DEC_RE.search(seg))
+        if inc == dec:  # both cues or neither -> ambiguous direction, defer
+            return None
+        factor *= (1 + pct / 100.0) if inc else (1 - pct / 100.0)
+    return _fmt(round(base * factor, 2))  # money -> snap off float noise
+
+
+def solve_unit_rate(prompt: str) -> str | None:
+    """Direct-proportion word problem: 'uses 12 L to travel 150 km — how many L
+    for 400 km at the same rate?' = 12*400/150 = 32.
+
+    Requires an explicit same-rate signal, EXACTLY three numbers, and unit
+    agreement (the asked unit matches the statement's rate unit; the question's
+    other unit matches the statement's basis unit). Agent/worker phrasings
+    (inverse proportion) are excluded. Otherwise defers.
+    """
+    p = prompt.lower().replace(",", "")
+    if not re.search(r"same rate|same speed|constant (?:rate|speed)|\bthis rate\b|\bthat rate\b", p):
+        return None
+    if re.search(r"\b(workers?|people|persons?|men|women|machines?|pipes?|taps?|pumps?|hoses?)\b", p):
+        return None  # inverse / agent-rate problems — not a direct proportion
+    if re.search(r"\bcents?\b", p):
+        return None
+    if len(re.findall(r"\d+(?:\.\d+)?", p)) != 3:
+        return None
+    qm = re.search(r"how (?:many|much)\s+([a-z]+)", p)
+    if not qm:
+        return None
+    ask_unit = qm.group(1).rstrip("s")
+    stmt, ques = p[:qm.start()], p[qm.start():]
+    stmt_pairs = re.findall(r"(\d+(?:\.\d+)?)\s*([a-z]+)", stmt)
+    if len(stmt_pairs) != 2:
+        return None
+    a_pairs = [(float(v), u) for v, u in stmt_pairs if u.rstrip("s") == ask_unit]
+    b_pairs = [(float(v), u) for v, u in stmt_pairs if u.rstrip("s") != ask_unit]
+    if len(a_pairs) != 1 or len(b_pairs) != 1:
+        return None
+    A = a_pairs[0][0]
+    B, b_unit = b_pairs[0][0], b_pairs[0][1].rstrip("s")
+    ques_pairs = re.findall(r"(\d+(?:\.\d+)?)\s*([a-z]+)", ques)
+    if len(ques_pairs) != 1:
+        return None
+    C, c_unit = float(ques_pairs[0][0]), ques_pairs[0][1].rstrip("s")
+    if c_unit != b_unit or B == 0:
+        return None
+    return _fmt(A * C / B)
+
+
+def solve_bat_ball(prompt: str) -> str | None:
+    """Sum-and-difference ('bat and ball'): total T, one item costs D MORE than
+    the other, asked the cost of one item. cheaper=(T-D)/2, pricier=(T+D)/2.
+
+    Requires a stated total, an 'X costs $D more than Y' clause, a 'how much does
+    Z cost' question naming one of the two items, and an EXPLICIT cents/dollars
+    unit (the classic trap: $ values but 'in cents' answer -> x100). Else defers.
+    """
+    p = prompt.lower().replace(",", "")
+    tm = (re.search(r"\$?\s*(\d+(?:\.\d+)?)\s*(?:in\s+)?(?:total|together|combined|altogether)", p)
+          or re.search(r"(?:total(?:s|ing)?|together|combined|altogether)\D{0,6}\$?\s*(\d+(?:\.\d+)?)", p))
+    dm = re.search(r"(\w+)\s+costs?\s+\$?\s*(\d+(?:\.\d+)?)\s+more than\s+(?:the\s+)?(\w+)", p)
+    if not tm or not dm:
+        return None
+    T, D = float(tm.group(1)), float(dm.group(2))
+    pricier, cheaper = dm.group(1), dm.group(3)
+    if T < D or D < 0:
+        return None
+    qm = (re.search(r"how much (?:does|do|would|is|will)\s+(?:the\s+|a\s+|an\s+)?(\w+)\s+cost", p)
+          or re.search(r"(?:cost|price) of (?:the\s+)?(\w+)", p))
+    if not qm:
+        return None
+    item = qm.group(1)
+    if item == cheaper:
+        val = (T - D) / 2.0
+    elif item == pricier:
+        val = (T + D) / 2.0
+    else:
+        return None
+    if re.search(r"\bin cents\b|\bcents\b|how many cents", p):
+        val *= 100.0
+    elif not re.search(r"\bin dollars\b|\bdollars\b", p):
+        return None  # no explicit unit -> don't guess the scale
+    return _fmt(round(val, 2))  # money -> snap off float noise
+
+
+def solve_work_rate(prompt: str) -> str | None:
+    """Inverse worker-rate: W1 workers take T1 hours -> W2 workers take W1*T1/W2.
+
+    Scoped tightly to shared-total 'worker' problems with a same-rate signal and
+    matching time units on both sides. '2 workers, 6 hours; 3 workers?' = 4.
+    """
+    p = prompt.lower().replace(",", "")
+    if "worker" not in p:
+        return None
+    if not re.search(r"same (?:rate|wall|job|task|work|speed|amount)", p):
+        return None
+    qm = re.search(r"how (?:many|long)", p)
+    if not qm:
+        return None
+    stmt, ques = p[:qm.start()], p[qm.start():]
+    tm = re.search(r"(" + _NUMTOK + r")\s+(hours?|days?|minutes?|weeks?)", stmt)
+    w1m = re.search(r"(" + _NUMTOK + r")\s+workers?", stmt)
+    w2m = re.search(r"(" + _NUMTOK + r")\s+workers?", ques)
+    qunit = re.search(r"\b(hours?|days?|minutes?|weeks?)\b", ques)
+    if not (tm and w1m and w2m and qunit):
+        return None
+    T1, W1, W2 = _to_num(tm.group(1)), _to_num(w1m.group(1)), _to_num(w2m.group(1))
+    if None in (T1, W1, W2) or not W2:
+        return None
+    if tm.group(2).rstrip("s") != qunit.group(1).rstrip("s"):
+        return None  # would need a unit conversion — defer
+    return _fmt(W1 * T1 / W2)
+
+
+def solve_middle_position(prompt: str) -> str | None:
+    """'N runners, X finishes exactly in the middle, how many ahead of X?' For an
+    ODD field the middle is unique and (N-1)/2 finish on each side. Even N (no
+    unique middle) and any non-count question defer."""
+    p = prompt.lower().replace(",", "")
+    if "middle" not in p:
+        return None
+    if not re.search(r"(?:exactly\s+)?in the middle|middle (?:position|spot|place)", p):
+        return None
+    if not re.search(r"how many[^?.!]*\b(?:ahead of|before|in front of|behind|after)\b", p):
+        return None
+    nm = re.search(r"(" + _NUMTOK + r")\s+(runners?|people|persons?|players?|students?|"
+                   r"competitors?|racers?|contestants?|finishers?|participants?|athletes?|"
+                   r"sprinters?|cyclists?|swimmers?|riders?|horses?|cars?|boats?)\b", p)
+    if not nm:
+        return None
+    N = _to_num(nm.group(1))
+    if N is None or N != int(N) or int(N) % 2 == 0:
+        return None
+    return _fmt((int(N) - 1) / 2)
+
+
+def solve_syllogism_validity(prompt: str) -> str | None:
+    """Validity of a 'does it follow / can we conclude / necessarily' question —
+    the cases the transitive solve_syllogism defers on. Three PROVEN forms only:
+
+      C (Ferio, -> Yes): 'No M <verb>. Some P are M. -> some P cannot <verb>.'
+      A (-> No): a UNIVERSAL conclusion 'all X <pred>' whose only tie to X is an
+          existential 'some X …' and no 'all X …' premise (some != all).
+      B (converse, -> No): 'all A are B. <obj> is B. does it necessarily follow
+          that <obj> is A?' with no 'all B are A' and no direct '<obj> is A'.
+
+    Everything else returns None. Each form is a classically valid/invalid schema,
+    so a hit is provable, never a guess.
+    """
+    q = prompt.lower()
+
+    # C — Ferio: No M <pred>; Some P are M  =>  Some P are-not <pred>.
+    cm = re.search(r"(?:conclude|follow|infer)[^?.!]*?\bsome\s+(\w+?)s?\s+"
+                   r"(?:can\s?not|cannot|can't|do not|don't|does not|are not|aren't|"
+                   r"will not|won't|never)\s+(\w+)", q)
+    if cm:
+        P, pred = cm.group(1).rstrip("s"), cm.group(2).rstrip("s")
+        prem = q[:cm.start()]
+        for M in re.findall(r"\bno\s+(\w+?)s?\s+(?:can|could|ever|will)?\s*" + re.escape(pred) + r"\w*", prem):
+            m_sing = M.rstrip("s")
+            if re.search(r"\bsome\s+" + re.escape(P) + r"s?\s+are\s+" + re.escape(m_sing) + r"s?\b", prem):
+                return "Yes"
+
+    # A — universal conclusion 'all X <pred>' provable only via 'some X' => No.
+    am = re.search(r"(?:follow|conclude|infer|conclusion)[^?.!]*?\ball\s+(\w+?)s?\b", q)
+    if am:
+        X = re.escape(am.group(1).rstrip("s"))
+        head = q[:am.start()]
+        if re.search(r"\bsome\s+" + X + r"s?\b", q) and not re.search(r"\ball\s+" + X + r"s?\b", head):
+            return "No"
+
+    # B — converse fallacy: all A are B; obj is B; follows that obj is A? => No.
+    bm = re.search(r"(?:necessarily\s+follow|does it follow|\bfollow\b|\bconclude\b|"
+                   r"\bimply\b|\bmean\b)[^?.!]*?\bis\s+(?:an?\s+)?(\w+)\b", q)
+    if bm:
+        A = bm.group(1).rstrip("s")
+        head = q[:bm.start()]
+        if len(re.findall(r"\ball\s+\w+?s?\s+are\s+\w+?s?\b", head)) == 1:
+            mab = re.search(r"\ball\s+" + re.escape(A) + r"s?\s+are\s+(\w+?)s?\b", head)
+            if mab:
+                B = mab.group(1).rstrip("s")
+                obj_b = re.search(r"\bis\s+(?:an?\s+)?" + re.escape(B) + r"s?\b", head)
+                obj_a = re.search(r"\bis\s+(?:an?\s+)?" + re.escape(A) + r"s?\b", head)
+                rev = re.search(r"\ball\s+" + re.escape(B) + r"s?\s+are\s+" + re.escape(A) + r"s?\b", head)
+                if A != B and obj_b and not obj_a and not rev:
+                    return "No"
+    return None
+
+
+def _order_from_edges(edges, names):
+    """Shared: reject contradiction/cycle, require a fully-determined total order,
+    return {name: rank_score} where score = #people strictly below (0 = bottom),
+    or None if the order is not unique."""
+    edge_set = set(edges)
+    if any((lo, hi) in edge_set for hi, lo in edges):
+        return None
+    adj = collections.defaultdict(set)
+    for hi, lo in edges:
+        adj[hi].add(lo)
+    try:
+        graphlib.TopologicalSorter(adj).static_order()
+    except graphlib.CycleError:
+        return None
+    score = {n: len(_reach(adj, n)) for n in names}
+    if sorted(score.values()) != list(range(len(names))):
+        return None
+    return score
+
+
+def solve_score_count(prompt: str) -> str | None:
+    """'How many people scored higher/lower than X?' from 'A scored higher than B'
+    chains plus a 'scored the lowest/highest' extreme. Answers only when the full
+    order is uniquely determined; the count is then exact."""
+    low = prompt.lower()
+    if "scored" not in low:
+        return None
+    qm = re.search(rf"(?:how many|number of)[^.?!]*?scored\s+"
+                   rf"(higher|lower|more|less|better|worse)\s+than\s+({_NAME})", prompt, re.I)
+    if not qm:
+        return None
+    above = qm.group(1).lower() in ("higher", "more", "better")
+    target = qm.group(2)
+
+    edges, names = [], set()
+    for a, comp, b in re.findall(rf"({_NAME})\s+scored\s+"
+                                 rf"(higher|lower|more|less|better|worse)\s+than\s+({_NAME})", prompt):
+        if comp.lower() in ("higher", "more", "better"):
+            edges.append((a, b))
+        else:
+            edges.append((b, a))
+        names.update((a, b))
+    for person, ext in re.findall(rf"({_NAME})\s+scored\s+(?:the\s+)?(lowest|highest)", prompt):
+        for other in list(names):
+            if other != person:
+                edges.append((other, person) if ext.lower() == "lowest" else (person, other))
+        names.add(person)
+    if len(names) < 3 or target not in names:
+        return None
+    # if a head-count is stated ('five friends'), the named set must match it in
+    # full — otherwise an unmentioned person could sit above the target -> defer.
+    mtot = re.search(r"\b(" + _NUMTOK + r")\s+(?:friends|players|people|persons|students|"
+                     r"contestants|competitors|kids|children|siblings|colleagues|"
+                     r"candidates|runners|athletes)\b", low)
+    if mtot and _to_num(mtot.group(1)) not in (None, float(len(names))):
+        return None
+    score = _order_from_edges(edges, names)
+    if score is None:
+        return None
+    return _fmt(score[target] if not above else (len(names) - 1 - score[target]))
+
+
+def solve_letter_ranking(prompt: str) -> str | None:
+    """Single-letter comparative chain ('A is older than B. C is older than A. …')
+    answering an ordinal 'who is the second/third <superlative>'. Kept separate
+    from solve_ordering (whose _NAME won't match lone letters) and gated on a
+    unique total order; output is a full sentence to satisfy the phrase check."""
+    low = prompt.lower()
+    om = re.search(r"\b(second|2nd|third|3rd)\s+(\w+)", low)
+    if not om:
+        return None
+    ordinal, superl = _ORD[om.group(1)], om.group(2)
+    attr = want_max = None
+    for a in _ATTRS:
+        if superl in a.get("max", set()):
+            attr, want_max = a, True
+            break
+        if superl in a.get("min", set()):
+            attr, want_max = a, False
+            break
+    if attr is None or attr.get("race"):
+        return None
+    edges, names = [], set()
+    for x, comp, y in re.findall(r"\b([A-Z])\s+is\s+(\w+)\s+than\s+([A-Z])\b", prompt):
+        c = comp.lower()
+        if c in attr["gt"]:
+            edges.append((x, y))
+            names.update((x, y))
+        elif c in attr["lt"]:
+            edges.append((y, x))
+            names.update((x, y))
+        elif c in _GT or c in _LT:
+            return None  # a different dimension is mixed in -> defer
+    if len(edges) < 2 or len(names) < ordinal:
+        return None
+    score = _order_from_edges(edges, names)
+    if score is None:
+        return None
+    ranked = sorted(names, key=score.get)  # ascending [min … max]
+    pick = ranked[-ordinal] if want_max else ranked[ordinal - 1]
+    ordword = {2: "second", 3: "third"}[ordinal]
+    return f"{pick} is the {ordword} {superl}"
+
+
+def solve_row_middle(prompt: str) -> str | None:
+    """Three-in-a-row seating: the one stated 'not on either end' is the middle.
+    Only fires for exactly three seats (where not-an-end forces the middle)."""
+    low = prompt.lower()
+    if "middle" not in low or "row" not in low:
+        return None
+    if not (re.search(r"\bthree\b", low) or re.search(r"\b3\b", low)):
+        return None
+    if not re.search(r"who\b[^?.!]*\bmiddle\b", low):
+        return None
+    nm = re.search(rf"({_NAME})\s+is\s+(?:not on either end|not at either end|"
+                   rf"not on an end|in the middle)", prompt)
+    return nm.group(1) if nm else None
+
+
 def free_solve(category: str, prompt: str) -> str | None:
     """Dispatch to a free solver for the category, or None to use a model."""
     if category == "math":
-        return try_arithmetic(prompt) or solve_math_word(prompt) or solve_math_extra(prompt)
+        return (try_arithmetic(prompt) or solve_math_word(prompt) or solve_math_extra(prompt)
+                or solve_compound_percent(prompt) or solve_unit_rate(prompt)
+                or solve_bat_ball(prompt) or solve_work_rate(prompt)
+                or solve_middle_position(prompt) or solve_score_count(prompt))
     if category == "logic":
-        return solve_ordering(prompt) or solve_syllogism(prompt)
+        return (solve_ordering(prompt) or solve_syllogism(prompt)
+                or solve_syllogism_validity(prompt) or solve_score_count(prompt)
+                or solve_letter_ranking(prompt) or solve_middle_position(prompt)
+                or solve_row_middle(prompt))
     return None
