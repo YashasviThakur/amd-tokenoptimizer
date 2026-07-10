@@ -67,3 +67,15 @@ jobs:
           docker push ghcr.io/${OWNER}/${IMAGE}:latest
           docker push ghcr.io/${OWNER}/${IMAGE}:${{ github.sha }}
           echo "Pushed ghcr.io/${OWNER}/${IMAGE}:latest"
+
+      # Second package name: the judging queue re-checks reliably on BIG
+      # reference changes (lablab staff guidance: "just make another package").
+      # NOTE: a brand-new GHCR package defaults to PRIVATE — flip it to Public
+      # in GitHub package settings once before submitting, or the grader gets
+      # PULL_ERROR.
+      - name: Push under second package name
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        run: |
+          docker tag ghcr.io/${OWNER}/${IMAGE}:latest ghcr.io/${OWNER}/${IMAGE}-v2:latest
+          docker push ghcr.io/${OWNER}/${IMAGE}-v2:latest
+          echo "Pushed ghcr.io/${OWNER}/${IMAGE}-v2:latest"
