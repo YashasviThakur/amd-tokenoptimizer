@@ -146,7 +146,12 @@ def _candidate_models(category: str) -> list[str]:
     # stable-16 qualifier profile). Math/logic on instruct models get the CoT +
     # 'FINAL:' prompt automatically (build_remote_messages is model-aware).
     # Without verification this is a no-op: minimax stays first (measured).
-    if config.models_verified:
+    # FORCE_INSTRUCT_FIRST (token play): lead with gemma UNCONDITIONALLY. minimax
+    # measured a hard ~9k-token floor (reasoning billed as completion); the 3.5k
+    # leaders run the instruct family. If gemma is served -> ~3.5k tokens; if it
+    # 404s -> failover to minimax (0 wasted tokens, same 16). CoT+FINAL prompt
+    # activates for gemma math/logic automatically.
+    if config.models_verified or config.force_instruct_first:
         instruct = [m for m in ordered
                     if any(f in m.lower() for f in _NO_REASONING_FAMILIES)]
         if instruct:

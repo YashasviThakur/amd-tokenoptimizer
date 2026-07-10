@@ -170,6 +170,12 @@ class Config:
     # on this proof — never on guesswork (gemma is unverifiable from outside).
     models_verified: bool = False
 
+    # TOKEN PLAY: lead with the instruct family (gemma) UNCONDITIONALLY, not just
+    # on /models proof. minimax has a measured ~9k-token floor (reasoning billed
+    # as completion); the 3.5k-token leaders run gemma. Safe via failover: if
+    # gemma 404s, the router falls back to minimax (same 16, ~0 wasted tokens).
+    force_instruct_first: bool = os.getenv("FORCE_INSTRUCT_FIRST", "0").strip().lower() in ("1", "true", "yes")
+
     # Raise every category's max_tokens ceiling to at least this. The per-category
     # ceilings are token-rank optimizations — but minimax THINKS in completion
     # tokens, and a hard task can legitimately need 2-4k of reasoning before the
