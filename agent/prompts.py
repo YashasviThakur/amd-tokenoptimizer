@@ -72,8 +72,13 @@ REMOTE_SYSTEM = {
     "sentiment": "Reply with ONLY one word: positive, negative, or neutral.",
     "summarization": "Output ONLY the summary, no preamble.",
     "ner": 'Output ONLY minified JSON: {"person":[],"org":[],"location":[],"date":[]}.',
-    "code_debug": "Output ONLY the corrected code, no explanation.",
-    "code_gen": "Output ONLY the code, no explanation.",
+    # edge-case clause: the one genuine code miss in the LLM-judge eval was an
+    # edge-case trap (fib wrong for n=1), and the official practice task itself
+    # demands "handling duplicates correctly" — this benchmark tests edges.
+    "code_debug": ("Output ONLY the corrected code, no explanation. "
+                   "Handle edge cases (empty input, zero, one element) correctly."),
+    "code_gen": ("Output ONLY the code, no explanation. "
+                 "Handle edge cases (empty input, zero, one element) correctly."),
     "logic": "Give ONLY the final answer, no explanation.",
 }
 

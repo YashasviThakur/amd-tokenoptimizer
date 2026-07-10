@@ -75,13 +75,14 @@ def _looks_labeled(ans: str) -> bool:
 
 
 # Families ranked by MEASURED end-to-end accuracy on our 96-task stress set.
-# minimax-m3 leads: 94.8% through this router (the only Track-1 allowed model we
-# could validate — gemma-4 404s on the real API, so it has never been tested and
-# must not outrank a measured model). kimi deprioritized (dumps reasoning into
-# content; the extractor handles it, but clean-content models come first).
-# NOTHING is excluded: a homogeneous grader list is still attempted.
-_FAMILY_PREF = ("minimax", "gpt-oss", "gemma", "glm", "deepseek", "qwen", "llama", "mixtral", "phi")
-_DEPRIORITIZE = ("kimi",)
+# minimax-m3 leads (94.8% through this router). kimi SECOND: it is the only
+# OTHER allowed model verified to actually respond (gemma-4 404s on every key
+# we could test — it may be two dead entries), so kimi is the one real second
+# chance a task gets when minimax fails or times out; its reasoning-dump quirk
+# is handled by the extractor. NOTHING is excluded: a homogeneous grader list
+# is still attempted.
+_FAMILY_PREF = ("minimax", "kimi", "gpt-oss", "gemma", "glm", "deepseek", "qwen", "llama", "mixtral", "phi")
+_DEPRIORITIZE = ()
 _SHORT_CATEGORIES = {"sentiment", "math", "factual", "logic"}
 
 
