@@ -26,8 +26,10 @@ from .prompts import (_NO_REASONING_FAMILIES, build_messages, build_remote_messa
                       build_retry_messages, max_tokens_for)
 from .solvers import free_solve
 
-# Categories the local model handles reliably (short outputs, fast on CPU).
-LOCAL_OK = {"factual", "sentiment", "summarization"}
+# Categories the local model handles reliably (fast on CPU / free verifier signal).
+# ner + code_gen reclaimed: the tuned model extracts entities exactly (case-normalized
+# downstream) and writes compiling code; both are kept only on a free format check.
+LOCAL_OK = {"factual", "sentiment", "summarization", "ner", "code_gen"}
 # No cheap correctness verifier -> take two local draws; disagreement = unsure.
 SELF_CONSISTENCY = {"factual", "sentiment"}
 RETRY_CATEGORIES = {"ner", "summarization", "sentiment"}
@@ -44,7 +46,8 @@ PRIOR = {
     "sentiment": 0.35,  # PROVISIONAL — retune vs measured tuned-model per-category accuracy before shipping
     "summarization": 0.55,  # PROVISIONAL — retune vs measured tuned-model per-category accuracy before shipping
     "ner": 0.74, "factual": 0.55,
-    "math": 0.28, "logic": 0.28, "code_debug": 0.33, "code_gen": 0.38,
+    "math": 0.28, "logic": 0.28, "code_debug": 0.33,
+    "code_gen": 0.55,  # reclaimed local (measured ~90%); kept only when V.code_compiles (see _confidence)
 }
 
 
@@ -68,6 +71,10 @@ def _confidence(category: str, prompt: str, samples: list[str]) -> float:
         c += 0.10 if V.length_ok(prompt, ans) else -0.20
     elif category == "factual":
         c += -0.40 if not ans.strip() else 0.0
+    elif category == "code_gen":
+        # syntactically valid code -> keep local (0.55+0.10=0.65); non-compiling
+        # stays at 0.55 (< 0.60) and escalates. The only free correctness proxy.
+        c += 0.10 if V.code_compiles(ans) else 0.0
     return max(0.0, min(1.0, c))
 
 

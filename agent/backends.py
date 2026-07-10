@@ -128,6 +128,24 @@ def normalize_answer(text: str) -> str:
     return (text or "").translate(_UNICODE_ASCII).strip()
 
 
+def lowercase_ner(ans: str) -> str:
+    """Lowercase the entity STRINGS in an NER JSON object (keys untouched), matching
+    the grader's lowercase expected form. The tuned local model extracts entities
+    exactly but preserves original case ("Tim Cook" vs expected "tim cook"); only the
+    list values are lowered, then re-serialized minified. Anything that doesn't parse
+    to a JSON dict is returned unchanged (safe whether or not the judge is case-fold)."""
+    try:
+        d = json.loads(ans)
+    except Exception:
+        return ans
+    if not isinstance(d, dict):
+        return ans
+    for k, v in d.items():
+        if isinstance(v, list):
+            d[k] = [s.lower() if isinstance(s, str) else s for s in v]
+    return json.dumps(d, separators=(",", ":"))
+
+
 def _after_marker(t: str) -> str:
     """The text after the LAST 'answer/final answer' marker (reasoning restates
     before concluding, so the last one is the conclusion)."""

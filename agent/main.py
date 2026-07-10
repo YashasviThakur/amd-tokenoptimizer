@@ -12,7 +12,8 @@ import sys
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
-from .backends import LocalModel, Model, RemoteMeter, normalize_answer, strip_code_fence
+from .backends import (LocalModel, Model, RemoteMeter, lowercase_ner, normalize_answer,
+                       strip_code_fence)
 from .config import config
 from .router import route
 
@@ -224,6 +225,8 @@ def run() -> dict:
                         # misclassified code task ("Write a program..." routed factual):
                         # the answer is still code — fences must go regardless of category
                         ans = strip_code_fence(ans)
+                    if r.get("category") == "ner":
+                        ans = lowercase_ner(ans)  # match the grader's lowercase entity strings
                 results[i] = {"task_id": str(r.get("task_id")), "answer": ans}
                 meta[i] = {"task_id": r.get("task_id"), "route": r.get("route"),
                            "category": r.get("category"), "confidence": r.get("confidence"),
