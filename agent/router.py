@@ -162,12 +162,11 @@ def _candidate_models(category: str) -> list[str]:
     return list(dict.fromkeys(m for m in top if m))
 
 
-# Categories where a single sample can slip on a judgment call and answers
-# normalize into comparable keys. SENTIMENT REMOVED (audit, executed): on a
-# 3-label space two temp-0.8 draws agree by chance often enough to flip a
-# CORRECT temp-0 anchor on ambiguous reviews — EV-negative there, while
-# math/logic agreement in an open answer space is real evidence.
-_VOTE_CATEGORIES = {"math", "logic"}
+# VOTE OFF (stability build): measured a wash on the hidden set (14/19 with and
+# without), while each vote is an extra burst call into a rate-limiting proxy
+# and a residual override risk (n=2 degeneracy). Fewer calls = fewer ways for a
+# task to die. Machinery kept; re-enable by listing categories here.
+_VOTE_CATEGORIES: set = set()
 
 
 def _final_line(category: str, ans: str) -> str:

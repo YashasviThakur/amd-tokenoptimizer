@@ -36,7 +36,10 @@ COPY agent ./agent
 # The router calls ONLY the harness-injected ALLOWED_MODELS, each VERBATIM: the
 #   judging proxy matches ids exactly, so any off-list string (a re-spelled id or an
 #   always-on model not on the list) makes the whole submission a MODEL_VIOLATION.
-# MAX_WORKERS=3 / REQUEST_TIMEOUT=22 / PER_TASK_BUDGET_S=27 / RUN_DEADLINE_S=420:
+# MAX_WORKERS=3 / REQUEST_TIMEOUT=25 / PER_TASK_BUDGET_S=28 / RUN_DEADLINE_S=420:
+#   (STABILITY: a measured flaky task timed out at the old 22s and answered in 2s
+#   on retry — slow reasoning generations need the headroom; 25+fast-404 failover
+#   ~= 28 < the 30s/task limit.)
 #   RELIABILITY over raw speed. The judging proxy rate-limits concurrent bursts
 #   (429 -> after one backoff the task fails over / empties -> WRONG); 3 workers is
 #   the measured burst the proxy tolerates (5 regressed it). The allowed models are
@@ -60,8 +63,8 @@ ENV INPUT_PATH=/input/tasks.json \
     DISABLE_SOLVERS=0 \
     LOCAL_ONLY=0 \
     REASONING_EFFORT= \
-    REQUEST_TIMEOUT=22 \
-    PER_TASK_BUDGET_S=27 \
+    REQUEST_TIMEOUT=25 \
+    PER_TASK_BUDGET_S=28 \
     RUN_DEADLINE_S=420 \
     MAX_WORKERS=3 \
     MODEL_DISCOVERY=0
