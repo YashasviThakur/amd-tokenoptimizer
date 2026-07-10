@@ -48,7 +48,9 @@ pip install -q -r llama.cpp/requirements.txt
 pip install -q "transformers==4.46.3"
 python llama.cpp/convert_hf_to_gguf.py finetune/out-merged --outfile tokenopt-3b-f16.gguf --outtype f16
 cmake -B llama.cpp/build -S llama.cpp -DGGML_NATIVE=OFF >/dev/null
-cmake --build llama.cpp/build --target llama-quantize -j >/dev/null
+# --parallel 2 (not -j): unlimited parallel compilers OOM-kill cc1plus on a
+# low-RAM box (Colab free ~12GB). Two at a time stays under memory.
+cmake --build llama.cpp/build --target llama-quantize --parallel 2 >/dev/null
 ./llama.cpp/build/bin/llama-quantize tokenopt-3b-f16.gguf tokenopt-3b-q4_k_m.gguf Q4_K_M
 ls -lh tokenopt-3b-q4_k_m.gguf
 
