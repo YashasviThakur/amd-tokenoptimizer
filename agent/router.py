@@ -342,11 +342,14 @@ def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0
                 # a CoT prompt for math/logic — "final answer only" forbids the
                 # thinking those tasks need on a plain instruct model.
                 msgs = messages if full_prompt else build_remote_messages(category, prompt, model)
-                # thinking OFF on soft categories for minimax-family models only:
-                # measured identical answers ~85 tok/task cheaper; hard categories
-                # (math/logic/code) keep the reasoning that earns their accuracy.
-                t_off = (config.thinking_off_soft and "minimax" in model.lower()
-                         and category in ("sentiment", "factual", "ner", "summarization"))
+                # thinking OFF for minimax-family models: ALL categories when
+                # thinking_off_all (hard categories get the visible-CoT prompt via
+                # build_remote_messages — measured 6/6 correct at 1/4 the tokens);
+                # else soft categories only (the conservative build-J behavior).
+                t_off = ("minimax" in model.lower()
+                         and (config.thinking_off_all
+                              or (config.thinking_off_soft and category in
+                                  ("sentiment", "factual", "ner", "summarization"))))
                 out = remote.chat(model, msgs, max_tokens=mt, temperature=0.0, n=1,
                                   reasoning_effort=config.reasoning_effort, timeout=call_timeout,
                                   thinking_off=t_off)

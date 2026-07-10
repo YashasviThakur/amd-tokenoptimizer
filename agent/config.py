@@ -183,6 +183,14 @@ class Config:
     # dropped-and-retried on 4xx if a proxy rejects it (backends.chat).
     thinking_off_soft: bool = os.getenv("THINKING_OFF_SOFT", "0").strip().lower() in ("1", "true", "yes")
 
+    # TOKEN PLAY 3 (the top-3 shot): thinking disabled on EVERY category, with
+    # math/logic switched to the visible-CoT + 'FINAL:' prompt. MEASURED on the
+    # real API, 6/6 correct (144, 55, Sam, Eve, both code tasks) at 181-253
+    # tokens/task vs 500-900 with hidden thinking — the model still reasons,
+    # just visibly (~70 tok) instead of billed-hidden (~400 tok). Projected
+    # hidden set ~3.8-4.4k = top-3 territory. Supersedes thinking_off_soft.
+    thinking_off_all: bool = os.getenv("THINKING_OFF_ALL", "0").strip().lower() in ("1", "true", "yes")
+
     # Raise every category's max_tokens ceiling to at least this. The per-category
     # ceilings are token-rank optimizations — but minimax THINKS in completion
     # tokens, and a hard task can legitimately need 2-4k of reasoning before the

@@ -5,6 +5,8 @@ to exactly what the judge needs, and max_tokens is capped hard per category.
 """
 from __future__ import annotations
 
+from .config import config as _cfg
+
 # system prompt + max_tokens CEILING per category. These are truncation guards,
 # not targets — a model stops when it's done, so a high ceiling costs nothing on
 # a short answer but prevents a *reasoning* model from having its answer starved
@@ -123,7 +125,13 @@ def _compress(text: str) -> str:
 
 def build_remote_messages(category: str, prompt: str, model: str = "") -> list[dict]:
     lm = (model or "").lower()
-    if category in _COT_CATEGORIES and any(f in lm for f in _NO_REASONING_FAMILIES):
+    # CoT applies when the model has no usable hidden-reasoning channel: plain
+    # instruct families, OR minimax with thinking disabled (thinking_off_all) —
+    # visible reasoning (~70 tok) replaces the billed-hidden trace (~400 tok);
+    # measured 6/6 correct on math/logic/code at 1/4 the tokens.
+    no_hidden_reasoning = (any(f in lm for f in _NO_REASONING_FAMILIES)
+                           or (_cfg.thinking_off_all and "minimax" in lm))
+    if category in _COT_CATEGORIES and no_hidden_reasoning:
         system = _COT_SYSTEM
     else:
         system = REMOTE_SYSTEM.get(category, "Answer only.")
