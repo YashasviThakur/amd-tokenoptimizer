@@ -42,6 +42,10 @@ python finetune/train_lora.py --base Qwen/Qwen2.5-3B-Instruct --epochs 3 $FP16
 echo "==> [4/6] Build llama.cpp quantizer + convert to GGUF Q4_K_M"
 if [ ! -d llama.cpp ]; then git clone https://github.com/ggerganov/llama.cpp; fi
 pip install -q -r llama.cpp/requirements.txt
+# llama.cpp's tokenizer load hits an extra_special_tokens regression in newer
+# transformers (Colab ships one). 4.46.3 converts Qwen2.5 cleanly; training already
+# finished above, so downgrading only for the conversion is safe.
+pip install -q "transformers==4.46.3"
 python llama.cpp/convert_hf_to_gguf.py finetune/out-merged --outfile tokenopt-3b-f16.gguf --outtype f16
 cmake -B llama.cpp/build -S llama.cpp -DGGML_NATIVE=OFF >/dev/null
 cmake --build llama.cpp/build --target llama-quantize -j >/dev/null
