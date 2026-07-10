@@ -295,7 +295,7 @@ def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0
     wrong); the local answer is sometimes right. Never discard it for an empty remote."""
     builder = build_messages if full_prompt else build_remote_messages
     messages = builder(category, prompt)  # per-model variant built inside the loop
-    max_tok = max_tokens_for(category)
+    max_tok = max(max_tokens_for(category), config.max_tokens_floor)
     candidates = _candidate_models(category)
     word_limited = category == "summarization" and bool(_WORD_LIMIT.search(prompt))
     if word_limited:
@@ -324,7 +324,9 @@ def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0
         # now applies to EVERY category: gateway simulation showed the old
         # short-categories-only rule accepting trace-truncated garbage for
         # summarization/ner/code. Ceiling capped so a retry stays <30s/request.
-        for mt in (max_tok, min(max_tok * 3, 1536)):
+        # single attempt when the base ceiling is already large (a floor-raised
+        # 4096 has no bigger retry; the old min() would have "retried" SMALLER)
+        for mt in ((max_tok,) if max_tok >= 1536 else (max_tok, min(max_tok * 3, 1536))):
             rem = _time_left()
             if rem is not None and rem <= 4.0:  # not enough time for another attempt
                 break

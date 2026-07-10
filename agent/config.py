@@ -170,6 +170,13 @@ class Config:
     # on this proof — never on guesswork (gemma is unverifiable from outside).
     models_verified: bool = False
 
+    # Raise every category's max_tokens ceiling to at least this. The per-category
+    # ceilings are token-rank optimizations — but minimax THINKS in completion
+    # tokens, and a hard task can legitimately need 2-4k of reasoning before the
+    # answer. Naive agents with no cap let it finish and pass; our caps truncate
+    # -> empty content -> salvage -> fail. Gate first, rank later: 0 disables.
+    max_tokens_floor: int = int(os.getenv("MAX_TOKENS_FLOOR", "0"))
+
     def has_remote(self) -> bool:
         # Remote is usable if we can reach Fireworks at all. Gating this on the
         # model list alone meant a missing/renamed ALLOWED_MODELS silently routed
