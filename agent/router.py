@@ -163,16 +163,27 @@ def _candidate_models(category: str) -> list[str]:
                      and "code" in ordered[0].lower())):
         ordered.remove(config.preferred_model)
         ordered.insert(0, config.preferred_model)
-    # cap fan-out at 3, but force FAMILY DIVERSITY into the last slot: with an
-    # allow-list of three gemma variants, a systemic gemma failure (template,
-    # rate limit) would otherwise kill every candidate for the task.
-    top = ordered[:2]
-    fam = ordered[0].split("-")[0].lower() if ordered else ""
-    diverse = next((m for m in ordered[2:] if m.split("-")[0].lower() != fam), None)
-    if diverse:
-        top.append(diverse)
-    elif len(ordered) > 2:
-        top.append(ordered[2])
+    # INSTRUCT-FIRST (gemma token play): try EVERY allowed instruct variant before
+    # the reasoning failover, so the user can deploy the CHEAPEST gemma (nvfp4 /
+    # a4b / 31b) and it still gets reached — an undeployed variant 404s in ~1s at
+    # 0 tokens, then the next is tried. The final reasoning model (minimax) is the
+    # safety net if no gemma is deployed. Bounded: <=3 gemmas + 1 failover.
+    if config.force_instruct_first or config.models_verified:
+        instruct = [m for m in ordered
+                    if any(f in m.lower() for f in _NO_REASONING_FAMILIES)]
+        failover = next((m for m in ordered if m not in instruct), None)
+        top = instruct + ([failover] if failover else [])
+    else:
+        # cap fan-out at 3, but force FAMILY DIVERSITY into the last slot: with an
+        # allow-list of three gemma variants, a systemic gemma failure (template,
+        # rate limit) would otherwise kill every candidate for the task.
+        top = ordered[:2]
+        fam = ordered[0].split("-")[0].lower() if ordered else ""
+        diverse = next((m for m in ordered[2:] if m.split("-")[0].lower() != fam), None)
+        if diverse:
+            top.append(diverse)
+        elif len(ordered) > 2:
+            top.append(ordered[2])
     # Send each pick EXACTLY as the harness injected it — nothing else. The judging
     # proxy matches ALLOWED_MODELS entries VERBATIM; ANY other model string (a bare/
     # prefixed re-spelling of an allowed id, or an always-on model not on the list)
