@@ -50,12 +50,12 @@ jobs:
           print("solver answers:", [x["answer"] for x in d])
           PY
 
-      - name: Image is slim (no bundled model — assert well under the size cap)
+      - name: Image under the PULL_ERROR-safe line (hybrid bundles a ~3.1GB model)
         run: |
           BYTES=$(docker image inspect ghcr.io/${OWNER}/${IMAGE}:latest --format '{{.Size}}')
           MB=$((BYTES/1024/1024))
           echo "image size: ${MB} MB"
-          test "$MB" -lt 800 || { echo "image unexpectedly large (${MB}MB) — a model may have leaked in"; exit 1; }
+          test "$MB" -lt 5000 || { echo "image too large (${MB}MB) — PULL_ERROR risk above ~5GB"; exit 1; }
 
       - name: Log in to GHCR
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'

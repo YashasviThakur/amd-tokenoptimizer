@@ -1,7 +1,7 @@
 # Track-1 submission image — HYBRID local+remote token-efficient agent.
 #
 # Strategy: free deterministic solvers answer what they can prove (0 tokens); a
-# bundled fine-tuned Qwen2.5-3B (Q4 GGUF, llama-cpp-python CPU) answers the
+# bundled fine-tuned Qwen2.5-3B (Q8_0 GGUF, llama-cpp-python CPU) answers the
 # categories it's reliable on — factual / sentiment / summarization — for 0 tokens;
 # every other category (ner / code / leftover math+logic) and every low-confidence
 # or near-deadline task escalates to a Fireworks model. The earlier hybrid TIMEOUT'd
@@ -39,12 +39,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
  && rm -rf /var/lib/apt/lists/*
 
 # Bundle the fine-tuned local model weights in the image (downloaded at build time
-# — CI has fast HF network; the grading box never downloads). ~1.9GB, well under
-# the 10GB cap. Pass the real repo id at build:
-#   --build-arg HF_GGUF_REPO=<you>/tokenopt-3b-gguf
-ARG HF_GGUF_REPO=PLACEHOLDER/tokenopt-3b-gguf
+# — CI has fast HF network; the grading box never downloads). ~3.1GB, well under
+# the 10GB cap. Repo id overridable at build: --build-arg HF_GGUF_REPO=<you>/...
+ARG HF_GGUF_REPO=yashasvithakur/tokenopt-3b-gguf
 RUN python -c "from huggingface_hub import hf_hub_download; \
-hf_hub_download('${HF_GGUF_REPO}','tokenopt-3b-q4_k_m.gguf', local_dir='/models')"
+hf_hub_download('${HF_GGUF_REPO}','tokenopt-3b-q8_0.gguf', local_dir='/models')"
 
 COPY agent/requirements.txt ./agent/requirements.txt
 RUN pip install --no-cache-dir -r agent/requirements.txt
@@ -58,7 +57,7 @@ COPY agent ./agent
 # REMOTE_FIRST=0: free solvers first (0 tokens), then the bundled local model for
 #   the categories it's reliable on (factual/sentiment/summarization), then Fireworks
 #   for everything else + low-confidence + near-deadline escalations.
-# USE_LOCAL=1 / LOCAL_MODEL_PATH: bundle the fine-tuned Qwen2.5-3B Q4 GGUF and answer
+# USE_LOCAL=1 / LOCAL_MODEL_PATH: bundle the fine-tuned Qwen2.5-3B Q8_0 GGUF and answer
 #   easy categories for 0 tokens. The old TIMEOUT is bounded now: only three categories
 #   ever go local (router.LOCAL_OK) and past RUN_DEADLINE_S main.py flips the rest
 #   straight to Fireworks (prefer_remote).
@@ -91,7 +90,7 @@ ENV INPUT_PATH=/input/tasks.json \
     OUTPUT_PATH=/output/results.json \
     REMOTE_FIRST=0 \
     USE_LOCAL=1 \
-    LOCAL_MODEL_PATH=/models/tokenopt-3b-q4_k_m.gguf \
+    LOCAL_MODEL_PATH=/models/tokenopt-3b-q8_0.gguf \
     LOCAL_SAMPLES_HARD=2 \
     DISABLE_SOLVERS=0 \
     LOCAL_ONLY=0 \
