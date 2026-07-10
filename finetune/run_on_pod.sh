@@ -27,6 +27,9 @@ if ! python -c "import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1
   pip install -q torch --index-url https://download.pytorch.org/whl/rocm6.1
 fi
 pip install -q -r finetune/requirements.txt huggingface_hub
+# peft's LoRA path version-checks torchao and ERRORS if an old one is present
+# (Colab ships 0.10; peft wants >0.16). We don't use torchao for LoRA -> remove it.
+pip uninstall -y torchao 2>/dev/null || true
 
 echo "==> [3/6] LoRA fine-tune (Qwen2.5-3B-Instruct, 3 epochs) -> finetune/out-merged"
 # T4/P100 (Colab/Kaggle free tier) have no bf16 -> auto-fall back to fp16;
