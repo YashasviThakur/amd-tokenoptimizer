@@ -129,8 +129,11 @@ def _candidate_models(category: str) -> list[str]:
         lm = m.lower()
         depr = any(d in lm for d in _DEPRIORITIZE)
         pref = next((i for i, f in enumerate(_FAMILY_PREF) if f in lm), len(_FAMILY_PREF))
-        code_bias = 0 if (category in ("code_gen", "code_debug") and "code" in lm) else 1
-        return (code_bias, 1 if depr else 0, pref, models.index(m))
+        # NO code-name bias: it made kimi-k2p7-code front BOTH code categories
+        # (4-5 of 19 hidden tasks) purely on its name — an UNMEASURED model this
+        # file itself deprioritizes for dumping reasoning into content — while
+        # minimax measured 100% on code locally. Measured always outranks named.
+        return (1 if depr else 0, pref, models.index(m))
 
     ordered = sorted(models, key=rank)
     # honor an explicit preference first, if it's actually allowed — except for
