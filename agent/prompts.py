@@ -103,8 +103,9 @@ _NO_REASONING_FAMILIES = ("gemma", "llama", "mixtral", "mistral", "phi", "qwen")
 # CoT categories: multi-step ones where visible reasoning changes the answer.
 # code_* excluded (the required output IS the code; FINAL-line format doesn't fit).
 _COT_CATEGORIES = {"math", "logic"}
-_COT_SYSTEM = ("Solve step by step, briefly. Then give the final answer on its "
-               "own last line, formatted exactly as: FINAL: <answer>")
+# trimmed for tokens (rides the gemma build, not a separate roll): same intent,
+# fewer prompt tokens on every math/logic task.
+_COT_SYSTEM = "Reason briefly, then a final line exactly: FINAL: <answer>"
 
 
 def _compress(text: str) -> str:
