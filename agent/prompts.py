@@ -69,7 +69,13 @@ REMOTE_SYSTEM = {
     # of them flipped a passing hidden task. Prompts that touch EVERY task in a
     # category are regression risks; only measured-safe machinery stays
     # (word-limit reorder/enforcer fire solely on explicit "N words" tasks).
-    "sentiment": "Reply with ONLY one word: positive, negative, or neutral.",
+    # SOLO test (build G): the one confirmed sentiment miss class is a lukewarm
+    # /balanced review judged neutral while we said positive. This clause's only
+    # prior outing was inside the 3-prompt bundle whose -1 was later fully
+    # attributed to the NER schema (measured, build F) — the clause itself was
+    # never measured alone. Revert instantly if -1.
+    "sentiment": ("Reply with ONLY one word: positive, negative, or neutral. "
+                  "If praise and complaints are balanced, reply neutral."),
     "summarization": "Output ONLY the summary, no preamble.",
     # MEASURED single-variable on the hidden set (build F, 2026-07-10): the
     # adaptive schema (extra money/percent keys, follow-task-format clause)
