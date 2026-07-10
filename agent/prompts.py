@@ -71,7 +71,15 @@ REMOTE_SYSTEM = {
     # (word-limit reorder/enforcer fire solely on explicit "N words" tasks).
     "sentiment": "Reply with ONLY one word: positive, negative, or neutral.",
     "summarization": "Output ONLY the summary, no preamble.",
-    "ner": 'Output ONLY minified JSON: {"person":[],"org":[],"location":[],"date":[]}.',
+    # SINGLE-VARIABLE retest of the adaptive schema (it shipped in a 3-prompt
+    # bundle that regressed and was never tested alone): the fixed 4-key form
+    # makes money/percent/product entities structurally impossible and
+    # overrides task-specified key sets.
+    "ner": ('Extract named entities. If the task specifies entity types, keys, '
+            'or a format, follow it EXACTLY. Otherwise output ONLY minified '
+            'JSON with keys "person","org","location","date" (lists of '
+            'strings), adding keys like "money","percent","product","time" '
+            'only when such entities appear.'),
     # edge-case clause: the one genuine code miss in the LLM-judge eval was an
     # edge-case trap (fib wrong for n=1), and the official practice task itself
     # demands "handling duplicates correctly" — this benchmark tests edges.
