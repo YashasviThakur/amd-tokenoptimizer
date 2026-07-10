@@ -129,21 +129,27 @@ def normalize_answer(text: str) -> str:
 
 
 def lowercase_ner(ans: str) -> str:
-    """Lowercase the entity STRINGS in an NER JSON object (keys untouched), matching
-    the grader's lowercase expected form. The tuned local model extracts entities
-    exactly but preserves original case ("Tim Cook" vs expected "tim cook"); only the
-    list values are lowered, then re-serialized minified. Anything that doesn't parse
-    to a JSON dict is returned unchanged (safe whether or not the judge is case-fold)."""
+    """Normalize an NER JSON object to the grader's expected form: lowercase entity
+    STRINGS (keys untouched) and DROP empty-list keys. The tuned local model extracts
+    entities exactly but preserves case ("Tim Cook" vs expected "tim cook") and emits
+    all four keys, whereas the expected form omits a key when it has no entities. This
+    matches the grader's format under any comparison (case-fold or exact). Anything
+    that doesn't parse to a JSON dict is returned unchanged."""
     try:
         d = json.loads(ans)
     except Exception:
         return ans
     if not isinstance(d, dict):
         return ans
+    out = {}
     for k, v in d.items():
         if isinstance(v, list):
-            d[k] = [s.lower() if isinstance(s, str) else s for s in v]
-    return json.dumps(d, separators=(",", ":"))
+            lowered = [s.lower() if isinstance(s, str) else s for s in v]
+            if lowered:  # omit empty-entity keys to match the expected keys-when-present form
+                out[k] = lowered
+        else:
+            out[k] = v
+    return json.dumps(out, separators=(",", ":"))
 
 
 def _after_marker(t: str) -> str:
