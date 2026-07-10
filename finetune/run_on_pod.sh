@@ -29,8 +29,12 @@ fi
 pip install -q -r finetune/requirements.txt huggingface_hub
 
 echo "==> [3/6] LoRA fine-tune (Qwen2.5-3B-Instruct, 3 epochs) -> finetune/out-merged"
-python finetune/train_lora.py --base Qwen/Qwen2.5-3B-Instruct --epochs 3
-#   (if bf16 is unsupported on the pod GPU, re-run with:  --fp16)
+# T4/P100 (Colab/Kaggle free tier) have no bf16 -> auto-fall back to fp16;
+# AMD MI / NVIDIA A100 keep bf16. No user thinking required either way.
+FP16=""
+python -c "import torch,sys; sys.exit(0 if torch.cuda.is_bf16_supported() else 1)" 2>/dev/null || FP16="--fp16"
+echo "    precision: ${FP16:-bf16}"
+python finetune/train_lora.py --base Qwen/Qwen2.5-3B-Instruct --epochs 3 $FP16
 
 echo "==> [4/6] Build llama.cpp quantizer + convert to GGUF Q4_K_M"
 if [ ! -d llama.cpp ]; then git clone https://github.com/ggerganov/llama.cpp; fi
