@@ -1,25 +1,50 @@
-# Track-1 submission image — SLIM remote+solver agent (no bundled local model).
+# Track-1 submission image — HYBRID local+remote token-efficient agent.
 #
-# Strategy: free deterministic solvers answer what they can prove (0 tokens); every
-# remaining task goes to a SERVERLESS Fireworks model (gpt-oss, always-on, no
-# deployment) with a minimal prompt. No local model is bundled: the earlier hybrid
-# image was ~2.3GB (2GB model + llama-cpp) and, on the 2-vCPU grading box, 19
-# sequential CPU inferences blew the 10-min budget -> TIMEOUT whenever the grader's
-# injected on-demand models 404'd every remote call. This image is ~150MB: fast to
-# pull, instant to start, and has NO slow path anywhere (pull, ready, or runtime).
-# A task the model can't answer emits empty FAST (scoreable) rather than hanging.
+# Strategy: free deterministic solvers answer what they can prove (0 tokens); a
+# bundled fine-tuned Qwen2.5-3B (Q4 GGUF, llama-cpp-python CPU) answers the
+# categories it's reliable on — factual / sentiment / summarization — for 0 tokens;
+# every other category (ner / code / leftover math+logic) and every low-confidence
+# or near-deadline task escalates to a Fireworks model. The earlier hybrid TIMEOUT'd
+# because routing could send all ~19 tasks to the slow serial CPU model; that is now
+# bounded two ways — only three categories ever attempt local (router.LOCAL_OK), and
+# past RUN_DEADLINE_S main.py flips the remaining tasks straight to Fireworks
+# (prefer_remote), so a slow/large set can never blow the 10-min budget.
 #
-#   docker build -f docker/agent.Dockerfile -t <registry>/tokenoptimizer-agent:latest .
+#   docker buildx build --platform linux/amd64 \
+#     -f docker/agent.Dockerfile -t <registry>/tokenoptimizer-agent:latest \
+#     --build-arg HF_GGUF_REPO=<you>/tokenopt-3b-gguf --push .
 #
 # The harness injects FIREWORKS_API_KEY / FIREWORKS_BASE_URL / ALLOWED_MODELS and
 # mounts /input + /output. We only read those from the environment.
 FROM python:3.11-slim
 
 LABEL org.opencontainers.image.source="https://github.com/YashasviThakur/amd-tokenoptimizer" \
-      org.opencontainers.image.description="AMD ACT II Track 1 - slim token-efficient remote+solver agent" \
+      org.opencontainers.image.description="AMD ACT II Track 1 - hybrid local+Fireworks token-efficient agent" \
       org.opencontainers.image.licenses="MIT"
 
 WORKDIR /app
+
+# Build llama-cpp-python (CPU) FROM SOURCE with a portable AVX2 baseline
+# (GGML_NATIVE=OFF). Prebuilt wheels are risky: the musllinux wheel won't load on
+# glibc slim, and a -march=native / AVX-512 wheel can pass on the build CPU but
+# crash with an illegal instruction on the grading VM. An explicit AVX2/FMA/F16C
+# build runs on any modern x86-64 (universal on cloud) and links glibc.
+# GGML_OPENMP=OFF -> llama.cpp uses its own pthread pool, so the compiled .so has
+# no libgomp runtime dependency. Build tools are kept (only ~400MB; image stays
+# well under 10GB) so every runtime lib the .so needs is present.
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential cmake \
+ && CMAKE_ARGS="-DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON -DGGML_OPENMP=OFF" \
+      pip install --no-cache-dir "llama-cpp-python==0.3.2" \
+ && pip install --no-cache-dir "huggingface_hub>=0.23" \
+ && rm -rf /var/lib/apt/lists/*
+
+# Bundle the fine-tuned local model weights in the image (downloaded at build time
+# — CI has fast HF network; the grading box never downloads). ~1.9GB, well under
+# the 10GB cap. Pass the real repo id at build:
+#   --build-arg HF_GGUF_REPO=<you>/tokenopt-3b-gguf
+ARG HF_GGUF_REPO=PLACEHOLDER/tokenopt-3b-gguf
+RUN python -c "from huggingface_hub import hf_hub_download; \
+hf_hub_download('${HF_GGUF_REPO}','tokenopt-3b-q4_k_m.gguf', local_dir='/models')"
 
 COPY agent/requirements.txt ./agent/requirements.txt
 RUN pip install --no-cache-dir -r agent/requirements.txt
@@ -30,9 +55,15 @@ RUN python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
 
 COPY agent ./agent
 
-# REMOTE_FIRST=1: free solvers first (0 tokens), everything else to Fireworks.
-# USE_LOCAL=0: no bundled model — remote is serverless+fast; the slow CPU tier was
-#   a pure liability (TIMEOUT). A 404'd task emits empty fast instead of hanging.
+# REMOTE_FIRST=0: free solvers first (0 tokens), then the bundled local model for
+#   the categories it's reliable on (factual/sentiment/summarization), then Fireworks
+#   for everything else + low-confidence + near-deadline escalations.
+# USE_LOCAL=1 / LOCAL_MODEL_PATH: bundle the fine-tuned Qwen2.5-3B Q4 GGUF and answer
+#   easy categories for 0 tokens. The old TIMEOUT is bounded now: only three categories
+#   ever go local (router.LOCAL_OK) and past RUN_DEADLINE_S main.py flips the rest
+#   straight to Fireworks (prefer_remote).
+# LOCAL_SAMPLES_HARD=2: self-consistency — factual & sentiment keep a local answer only
+#   when two draws AGREE; a lone/disagreeing draw escalates (gate-safe).
 # The router calls ONLY the harness-injected ALLOWED_MODELS, each VERBATIM: the
 #   judging proxy matches ids exactly, so any off-list string (a re-spelled id or an
 #   always-on model not on the list) makes the whole submission a MODEL_VIOLATION.
@@ -58,8 +89,10 @@ COPY agent ./agent
 #   solvers win at least one task the model fumbles. Keep them.
 ENV INPUT_PATH=/input/tasks.json \
     OUTPUT_PATH=/output/results.json \
-    REMOTE_FIRST=1 \
-    USE_LOCAL=0 \
+    REMOTE_FIRST=0 \
+    USE_LOCAL=1 \
+    LOCAL_MODEL_PATH=/models/tokenopt-3b-q4_k_m.gguf \
+    LOCAL_SAMPLES_HARD=2 \
     DISABLE_SOLVERS=0 \
     LOCAL_ONLY=0 \
     REASONING_EFFORT= \

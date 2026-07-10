@@ -183,8 +183,11 @@ def run() -> dict:
     hard_deadline = config.run_deadline_s + 60.0
 
     def _work(task):
+        # Past the soft wall-clock deadline, escalate straight to Fireworks (fast)
+        # rather than the slow serial local model, so a large/slow set never TIMEOUTs.
+        prefer_remote = (time.time() - t0) > config.run_deadline_s
         try:
-            return route(task, local, remote, prefer_remote=False)
+            return route(task, local, remote, prefer_remote=prefer_remote)
         except Exception as e:  # never let one task sink the batch
             return {"task_id": task.get("task_id"), "answer": "", "route": "error",
                     "category": "?", "tokens": 0, "error": str(e)}

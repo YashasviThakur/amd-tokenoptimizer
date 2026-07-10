@@ -1,3 +1,4 @@
 # Runtime deps for the Track-1 agent container (kept slim — no web framework).
 httpx>=0.27
 tiktoken>=0.7   # optional but improves local token estimates
+huggingface_hub>=0.23   # build-time GGUF fetch for the bundled local model (llama-cpp built from source in the Dockerfile)

@@ -419,5 +419,9 @@ class LocalModel:
                 temp = temperature if n == 1 else max(temperature, 0.4)
                 r = self.llm.create_chat_completion(
                     messages=messages, max_tokens=max_tokens, temperature=temp, seed=1234 + i)
-                outs.append(r["choices"][0]["message"]["content"])
+                # Strip any inline <think>…</think> trace before it leaks into the
+                # answer — the local path has no separate reasoning_content channel
+                # (the remote Model.chat cleans via _extract_message_text; this is
+                # the equivalent guard so a raw trace is never submitted as-is).
+                outs.append(_clean_answer(r["choices"][0]["message"]["content"]))
         return outs

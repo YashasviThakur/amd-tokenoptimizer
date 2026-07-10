@@ -20,16 +20,16 @@ import time as _time
 
 from . import verifiers as V
 from .backends import extract_final
-from .classifier import HARD, classify
+from .classifier import classify
 from .config import config
 from .prompts import (_NO_REASONING_FAMILIES, build_messages, build_remote_messages,
                       build_retry_messages, max_tokens_for)
 from .solvers import free_solve
 
 # Categories the local model handles reliably (short outputs, fast on CPU).
-LOCAL_OK = {"sentiment", "summarization", "ner", "factual"}
+LOCAL_OK = {"factual", "sentiment", "summarization"}
 # No cheap correctness verifier -> take two local draws; disagreement = unsure.
-SELF_CONSISTENCY = {"factual"}
+SELF_CONSISTENCY = {"factual", "sentiment"}
 RETRY_CATEGORIES = {"ner", "summarization", "sentiment"}
 
 # Base trust per category for a ~3B local model (measured on the practice set:
@@ -41,7 +41,9 @@ RETRY_CATEGORIES = {"ner", "summarization", "sentiment"}
 # correctness verifier); a disagreeing pair lands at 0.25 and escalates. Measured
 # 100% local on dev factual — the biggest single token reclaim after the solvers.
 PRIOR = {
-    "sentiment": 0.82, "summarization": 0.72, "ner": 0.74, "factual": 0.55,
+    "sentiment": 0.35,  # PROVISIONAL — retune vs measured tuned-model per-category accuracy before shipping
+    "summarization": 0.55,  # PROVISIONAL — retune vs measured tuned-model per-category accuracy before shipping
+    "ner": 0.74, "factual": 0.55,
     "math": 0.28, "logic": 0.28, "code_debug": 0.33, "code_gen": 0.38,
 }
 
@@ -491,7 +493,7 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
     # on 2 vCPU risks the <30s/task limit).
     too_long = len(prompt) > config.local_max_prompt_chars
     if remote_ok and (config.remote_first or prefer_remote or not have_local
-                      or category in HARD or too_long):
+                      or category not in LOCAL_OK or too_long):
         r = _fireworks(task_id, category, prompt, remote, deadline=deadline)
         # Dead-remote rescue: every candidate failed with nothing to show (the
         # grader's Fireworks access being down does exactly this) -> a local answer
