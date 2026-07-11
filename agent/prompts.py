@@ -124,6 +124,51 @@ def _compress(text: str) -> str:
     return "\n".join(out).strip()
 
 
+import re as _re
+
+# The official rubrics (Judging FAQ public validation set) fail answers that IGNORE
+# the task's own format ask: a sentiment task demanding "a one-sentence reason" fails
+# a bare label ("one-sided reason fails regardless of label"); a factual task saying
+# "briefly explain why..." fails a bare fact; a two-part math task ("how much sugar
+# ... AND what is the total cost") requires BOTH values. Our terse only-the-answer
+# system prompts would force exactly those failures — so when the TASK asks for
+# elaboration, the system prompt must follow the task, not fight it.
+_ELAB_RE = _re.compile(
+    r"\bexplain|\bwhy\b|\bdifference\s+between\b|\bdescribe\b|\breason\b|"
+    r"\bjustify|\bhow\s+(?:does|do|it|each)\b|\bwhat\s+is\s+each\b|\bcompare\b",
+    _re.IGNORECASE)
+
+
+def wants_elaboration(prompt: str) -> bool:
+    """True when the task itself demands an explanation / reason / comparison."""
+    return bool(_ELAB_RE.search(prompt or ""))
+
+
+def is_multipart(prompt: str) -> bool:
+    """True for tasks asking for MORE than one value ('...how much sugar? ... what is
+    the total cost?') — the rubric requires every asked value, so 'only the final
+    numeric answer' would drop one and fail."""
+    p = prompt or ""
+    if p.count("?") >= 2:
+        return True
+    # single '?': an '... and what is/are ...' conjunction still asks for a 2nd value
+    return bool(_re.search(r"\band\b[^.?!]{0,60}\bwhat\s+(?:is|are|was)\b", p, _re.IGNORECASE))
+
+
+# Task-following overrides, used when the task demands elaboration. Still terse —
+# they forbid PREAMBLE and working, but allow exactly what the task asks for.
+_ELAB_SYSTEM = {
+    "sentiment": ("Reply with the sentiment label plus the brief reason the task asks for. "
+                  "If the text mixes praise and complaints, the reason must acknowledge BOTH sides."),
+    "factual": ("Answer the question directly and completely, including the brief "
+                "explanation the task asks for. No preamble, no filler."),
+    "math": ("Solve the problem and state EVERY value the task asks for, clearly "
+             "labeled. No working, no preamble."),
+    "logic": ("Solve the puzzle and give the answer with the brief justification the "
+              "task asks for. No preamble."),
+}
+
+
 def build_remote_messages(category: str, prompt: str, model: str = "") -> list[dict]:
     lm = (model or "").lower()
     # CoT applies when the model has no usable hidden-reasoning channel: plain
@@ -132,7 +177,11 @@ def build_remote_messages(category: str, prompt: str, model: str = "") -> list[d
     # measured 6/6 correct on math/logic/code at 1/4 the tokens.
     no_hidden_reasoning = (any(f in lm for f in _NO_REASONING_FAMILIES)
                            or (_cfg.thinking_off_all and "minimax" in lm))
-    if category in _COT_CATEGORIES and no_hidden_reasoning:
+    if category in ("sentiment", "factual", "logic") and wants_elaboration(prompt):
+        system = _ELAB_SYSTEM[category]
+    elif category == "math" and (is_multipart(prompt) or wants_elaboration(prompt)):
+        system = _ELAB_SYSTEM["math"]
+    elif category in _COT_CATEGORIES and no_hidden_reasoning:
         system = _COT_SYSTEM
     else:
         system = REMOTE_SYSTEM.get(category, "Answer only.")

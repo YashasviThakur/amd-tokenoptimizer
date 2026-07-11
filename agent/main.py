@@ -170,13 +170,17 @@ def _batch_prepass(tasks, remote, results, meta, t0) -> set:
     task — including any the batch couldn't cleanly answer — is left for normal routing.
     Purely additive and fallback-safe: it can lower tokens but never drop a task."""
     from collections import defaultdict
+    from .prompts import wants_elaboration
     groups: dict = defaultdict(list)
     for i, t in enumerate(tasks):
         try:
             cat = classify(t.get("prompt", ""))
         except Exception:
             continue
-        if cat in config.batch_categories:      # always-remote short cats only
+        # elaboration-demanding tasks ("briefly explain why...") produce multi-
+        # sentence answers that the single-line 'N) answer' batch format would
+        # mangle — they go per-task with the task-following prompt instead.
+        if cat in config.batch_categories and not wants_elaboration(t.get("prompt", "")):
             groups[cat].append((i, t.get("prompt", "")))
     resolved: set = set()
     deadline = t0 + config.run_deadline_s

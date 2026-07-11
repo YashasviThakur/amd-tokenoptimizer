@@ -23,7 +23,8 @@ from .backends import extract_final
 from .classifier import classify
 from .config import config
 from .prompts import (_NO_REASONING_FAMILIES, build_batch_messages, build_messages,
-                      build_remote_messages, build_retry_messages, max_tokens_for)
+                      build_remote_messages, build_retry_messages, max_tokens_for,
+                      wants_elaboration)
 from .solvers import free_solve
 
 # Categories the local model may answer for 0 tokens. sentiment + summarization are
@@ -626,8 +627,13 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
     # go remote — deterministic TIMEOUT protection on the 2-vCPU serialized model.
     local_exhausted = (have_local and
                        getattr(local, "_time_spent", 0.0) >= config.local_time_budget_s)
+    # A sentiment task that demands a REASON can't use the one-word local path — the
+    # rubric fails a bare label ("one-sided reason fails regardless of label"), so it
+    # routes remote where build_remote_messages switches to the task-following prompt.
+    needs_task_format = category == "sentiment" and wants_elaboration(prompt)
     if remote_ok and (config.remote_first or prefer_remote or not have_local
-                      or category not in LOCAL_OK or too_long or local_exhausted):
+                      or category not in LOCAL_OK or too_long or local_exhausted
+                      or needs_task_format):
         r = _fireworks(task_id, category, prompt, remote, deadline=deadline)
         # Dead-remote rescue: every candidate failed with nothing to show (the
         # grader's Fireworks access being down does exactly this) -> a local answer
