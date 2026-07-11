@@ -289,6 +289,12 @@ def selftest() -> int:
         {"task_id": "st11", "prompt": "A jacket costs $80 and is discounted by 25%. How much money do you save?"},
         {"task_id": "st12", "prompt": "Alice is taller than Bob. Bob is taller than Carol. Who is the second tallest?"},
         {"task_id": "st13", "prompt": "Write a program to calculate the factorial of 5."},
+        # new free solvers: sequence next-term, exact unit conversion, day-of-week
+        {"task_id": "st14", "prompt": "What is the next number in the sequence 3, 6, 9, 12?"},
+        {"task_id": "st15", "prompt": "How many minutes are in 2 hours?"},
+        {"task_id": "st16", "prompt": "If yesterday was Sunday, what day is today?"},
+        # a sequence that is NEITHER arithmetic nor geometric (primes) must DEFER
+        {"task_id": "st17", "prompt": "What is the next number in the sequence 2, 3, 5, 7?"},
     ]
     d = tempfile.mkdtemp()
     inp, outp = os.path.join(d, "tasks.json"), os.path.join(d, "results.json")
@@ -303,7 +309,7 @@ def selftest() -> int:
     try:
         out = json.loads(open(outp, encoding="utf-8").read())
         by = {o["task_id"]: o["answer"] for o in out}
-        ok = (isinstance(out, list) and len(out) == 13
+        ok = (isinstance(out, list) and len(out) == 17
               and all(isinstance(o.get("task_id"), str) and isinstance(o.get("answer"), str) for o in out)
               and "144" in by["st1"]
               and "carol" in by["st2"].lower()
@@ -317,7 +323,11 @@ def selftest() -> int:
               and by["st10"].strip() == ""                # reverse discount: deferred
               and by["st11"].strip() == "20"              # SAVINGS asked, not sale price
               and by["st12"].strip().lower() == "bob"     # ordinal: SECOND tallest
-              and by["st13"].strip() == "")               # "write a program" != math solver
+              and by["st13"].strip() == ""                # "write a program" != math solver
+              and by["st14"].strip() == "15"              # arithmetic sequence next-term
+              and by["st15"].strip() == "120"             # exact time conversion
+              and by["st16"].strip().lower() == "monday"  # day-of-week anchor+offset
+              and by["st17"].strip() == "")               # prime sequence: solver deferred
     except Exception as e:
         print(f"[selftest] FAIL: {e}")
         return 1
@@ -356,11 +366,39 @@ def selftest() -> int:
         print(f"[selftest] FAIL: code_gen gate raised {e}")
         return 1
 
-    passed = ok and cg_ok
+    # ── NER grounded-gate (offline: exercises V.ner_entities_grounded + router._confidence
+    # directly — no local model or Fireworks needed) ──────────────────────────────
+    try:
+        from . import verifiers as V
+        from .router import _confidence
+        thr = config.escalate_threshold
+        ner_prompt = ('Extract named entities as JSON with keys person, org, location, date: '
+                      '"Ada Lovelace met Charles Babbage at the Royal Society in London in 1840."')
+        # grounded extraction, two AGREEING draws -> kept LOCAL (0 tokens)
+        ner_ok_ans = ('{"person":["Ada Lovelace","Charles Babbage"],"org":["Royal Society"],'
+                      '"location":["London"],"date":["1840"]}')
+        # a hallucinated entity ("Alan Turing" is NOT in the source) -> ESCALATES even
+        # though both draws AGREE: self-consistency alone would keep it; the verbatim-
+        # grounding check is what rejects the hallucination.
+        ner_bad_ans = ('{"person":["Alan Turing"],"org":["Royal Society"],'
+                       '"location":["London"],"date":["1840"]}')
+        ner_ok = (
+            V.ner_entities_grounded(ner_prompt, ner_ok_ans) is True
+            and V.ner_entities_grounded(ner_prompt, ner_bad_ans) is False
+            and _confidence("ner", ner_prompt, [ner_ok_ans, ner_ok_ans]) >= thr    # kept local
+            and _confidence("ner", ner_prompt, [ner_bad_ans, ner_bad_ans]) < thr   # hallucination escalates
+            and _confidence("ner", ner_prompt, [ner_ok_ans]) < thr                 # single draw escalates
+            and _confidence("ner", ner_prompt, [ner_ok_ans, ner_bad_ans]) < thr    # disagreement escalates
+        )
+    except Exception as e:
+        print(f"[selftest] FAIL: ner gate raised {e}")
+        return 1
+
+    passed = ok and cg_ok and ner_ok
     if passed:
         print("[selftest] PASS")
     else:
-        print(f"[selftest] FAIL: contract_ok={ok} code_gen_gate_ok={cg_ok} "
+        print(f"[selftest] FAIL: contract_ok={ok} code_gen_gate_ok={cg_ok} ner_gate_ok={ner_ok} "
               f"verdicts={verdicts} out={out}")
     return 0 if passed else 1
 

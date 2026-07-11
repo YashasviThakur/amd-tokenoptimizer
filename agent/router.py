@@ -27,14 +27,17 @@ from .prompts import (_NO_REASONING_FAMILIES, build_messages, build_remote_messa
 from .solvers import free_solve
 
 # Categories the local model may answer for 0 tokens. sentiment + summarization are
-# pure-local and need no world knowledge (no hallucination risk). code_gen is included
-# but GATED by the execution oracle (_confidence -> V.run_extracted_tests): its answer
-# is kept only when the generated code passes the prompt's OWN I/O examples, otherwise
-# it escalates. ner is DROPPED — its format-only confidence check (valid JSON shape)
-# can't catch a wrong-but-well-formed answer, so it's unsafe to keep locally.
-LOCAL_OK = {"sentiment", "summarization", "code_gen"}
-# No cheap correctness verifier -> take two local draws; disagreement = unsure.
-SELF_CONSISTENCY = {"factual", "sentiment"}
+# pure-local and need no world knowledge (no hallucination risk). code_gen is GATED by
+# the execution oracle (_confidence -> V.run_extracted_tests): kept only when the code
+# passes the prompt's OWN I/O examples. ner is GATED by a correctness check too
+# (_confidence -> _ner_local_ok): kept only when TWO local draws agree on the exact
+# entity set AND every extracted entity is grounded verbatim in the source sentence
+# (V.ner_entities_grounded). A format-only shape check can't catch a hallucinated-but-
+# well-formed entity — that check can, so NER is safe to keep locally again.
+LOCAL_OK = {"sentiment", "summarization", "code_gen", "ner"}
+# No cheap correctness verifier -> take two local draws; disagreement = unsure. ner is
+# here too: its gate REQUIRES two agreeing (and grounded) draws before it keeps local.
+SELF_CONSISTENCY = {"factual", "sentiment", "ner"}
 RETRY_CATEGORIES = {"ner", "summarization", "sentiment"}
 
 # Base trust per category for a ~3B local model (measured on the practice set:
@@ -69,7 +72,12 @@ def _confidence(category: str, prompt: str, samples: list[str]) -> float:
     if category == "sentiment":
         c += 0.20 if V.label_ok(ans) else -0.50
     elif category == "ner":
-        c += 0.15 if (V.valid_ner_json(ans) or _looks_labeled(ans)) else -0.40
+        # OVERRIDE the prior (hence '=' not '+='): keep local ONLY when two draws agree
+        # on the exact normalized entity set AND every entity is grounded verbatim in
+        # the source (V.ner_entities_grounded) AND both parse as clean NER JSON. Any of
+        # those failing -> 0.2 (< escalate_threshold) -> escalate. A format-only shape
+        # check kept hallucinated-but-well-formed answers; this correctness gate can't.
+        c = 0.9 if _ner_local_ok(prompt, samples) else 0.2
     elif category == "summarization":
         c += 0.10 if V.length_ok(prompt, ans) else -0.20
     elif category == "factual":
@@ -85,9 +93,56 @@ def _confidence(category: str, prompt: str, samples: list[str]) -> float:
     return max(0.0, min(1.0, c))
 
 
-def _looks_labeled(ans: str) -> bool:
-    """NER output that labels entities either as JSON or as 'Name (Type)' pairs."""
-    return bool(re.search(r"\(\s*(person|org|organization|location|date|time)\b", ans, re.I))
+# Entity-type synonyms -> a canonical bucket, so two draws that label the same
+# entity under 'org' vs 'organization' still compare equal, and any UNRECOGNIZED
+# key makes the draw invalid (-> escalate).
+_NER_CANON = {"person": "person", "people": "person",
+              "org": "org", "organization": "org", "organisation": "org",
+              "location": "location", "loc": "location", "place": "location",
+              "date": "date", "time": "date", "misc": "misc"}
+
+
+def _ner_entity_sets(ans: str):
+    """Canonical {type: frozenset(lowercased entities)} for a NER answer, or None if
+    it doesn't parse to a JSON dict keyed ONLY by recognized entity types. Empty lists
+    are dropped, so two draws that differ only in which empty keys they emit still
+    compare equal; a draw with NO entities at all returns {} (falsy -> not kept)."""
+    raw = ans or ""
+    m = V._FENCE_RE.search(raw)
+    if m:
+        raw = m.group(1)
+    try:
+        obj = json.loads(raw.strip())
+    except Exception:
+        return None
+    if not isinstance(obj, dict):
+        return None
+    out: dict = {}
+    for k, v in obj.items():
+        ck = _NER_CANON.get(str(k).strip().lower())
+        if ck is None or not isinstance(v, list):
+            return None  # junk key or non-list value -> invalid draw
+        vals = {str(x).strip().lower() for x in v if isinstance(x, str) and str(x).strip()}
+        if vals:
+            out[ck] = out.get(ck, frozenset()) | frozenset(vals)
+    return out
+
+
+def _ner_local_ok(prompt: str, samples: list[str]) -> bool:
+    """Keep an NER answer local ONLY if ALL hold: two draws are available; each parses
+    to clean, non-empty NER JSON; both are grounded (every entity verbatim in the
+    source); and the two draws agree on the exact canonical entity set. Any failure
+    escalates — a conservative gate that can waste tokens but never keeps a wrong
+    answer (the catastrophic case)."""
+    if len(samples) < 2:
+        return False
+    s0, s1 = _ner_entity_sets(samples[0]), _ner_entity_sets(samples[1])
+    if not s0 or not s1:      # unparseable, junk-keyed, or all-empty -> escalate
+        return False
+    if s0 != s1:              # self-consistency failure -> escalate
+        return False
+    return (V.ner_entities_grounded(prompt, samples[0])
+            and V.ner_entities_grounded(prompt, samples[1]))
 
 
 # Families ranked by MEASURED end-to-end accuracy on our 96-task stress set.
@@ -522,6 +577,8 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
     if have_local:
         messages = build_messages(category, prompt)
         n = config.local_samples_hard if category in SELF_CONSISTENCY else 1
+        if category == "ner":
+            n = max(n, 2)  # the NER gate compares two draws; force the second sample
         try:
             samples = local.chat(config.local_model_path, messages,
                                  max_tokens=max_tokens_for(category),

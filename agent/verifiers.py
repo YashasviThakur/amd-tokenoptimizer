@@ -61,6 +61,32 @@ def try_arithmetic(prompt: str) -> str | None:
             return _fmt(float(m.group(1)) / 100.0 * float(m.group(2)))
         return None  # compound percent expression -> escalate, don't crude-eval
 
+    # word-operator arithmetic: "47 plus 23", "12 times 4", "100 divided by 5",
+    # "20 minus 5". EXACTLY two numeric operands in natural reading order, and
+    # nothing else numeric outside the operator phrase — so a multi-step word
+    # problem ("20 minus 5 apples, then double it") can't be crudely reduced.
+    # Reversal words ("subtracted from", "less than") are excluded: their operand
+    # order is inverted in prose and easy to compute backwards.
+    mw = re.search(r"(-?\d+(?:\.\d+)?)\s+(plus|added to|minus|times|multiplied by|"
+                   r"divided by)\s+(-?\d+(?:\.\d+)?)", p)
+    if mw and len(re.findall(r"-?\d+(?:\.\d+)?", p)) == 2:
+        rest = p[:mw.start()] + " " + p[mw.end():]
+        rest = re.sub(r"\b(what is|what's|whats|calculate|compute|evaluate|"
+                      r"the value of|the result of|result of|value of|equals|"
+                      r"equal to|please|find|is|of)\b", " ", rest)
+        # any leftover word/number means the phrase is a fragment of something
+        # bigger -> defer to the model rather than answer the fragment.
+        if not re.sub(r"[^a-z0-9]", "", rest):
+            a, op, b = float(mw.group(1)), mw.group(2), float(mw.group(3))
+            if op in ("plus", "added to"):
+                return _fmt(a + b)
+            if op == "minus":
+                return _fmt(a - b)
+            if op in ("times", "multiplied by"):
+                return _fmt(a * b)
+            if op == "divided by" and b != 0:
+                return _fmt(a / b)
+
     m = re.search(r"([0-9][0-9\.\s\+\-\*/\(\)]*[0-9\)])", p)
     if m and re.search(r"[\+\-\*/]", m.group(1)):
         # Only trust the captured expression when it IS the whole question — a
@@ -119,15 +145,27 @@ def code_compiles(text: str) -> bool:
         return False
 
 
-_NER_KEYS = {"person", "people", "org", "organization", "organisation",
-             "location", "loc", "place", "date", "time", "misc"}
+def _ner_source(prompt: str) -> str:
+    """The text an extracted entity must be grounded in. When the prompt delimits
+    the sentence with double/curly quotes (the common grader format) use ONLY the
+    quoted span(s) — a stricter haystack. Otherwise fall back to the whole prompt:
+    a genuinely-grounded entity is always a substring of the prompt, so the fallback
+    can only over-escalate (safe, costs tokens), never keep a fabricated entity."""
+    p = prompt or ""
+    spans = re.findall(r'"([^"]{3,})"', p) + re.findall(r"“([^”]{3,})”", p)
+    joined = " ".join(spans).strip()
+    return joined if joined else p
 
 
-def valid_ner_json(text: str) -> bool:
-    """Stricter than valid_json for NER confidence: require a JSON OBJECT keyed by
-    entity types (the requested schema), not just any parseable JSON. A bare list
-    like ["Obama"] or a wrong-shape blob no longer counts as 'well-formed'."""
-    raw = text or ""
+def ner_entities_grounded(prompt: str, answer: str) -> bool:
+    """True ONLY if `answer` parses to a JSON NER dict in which EVERY entity is a
+    non-empty string that appears VERBATIM (case-insensitive) in the source text,
+    AND at least one entity is present. This is the correctness gate that lets NER
+    stay local: a hallucinated entity (not in the sentence), a malformed value, or
+    an all-empty extraction returns False, so the router escalates to Fireworks.
+    Conservative by construction — it can reject a good answer (wasting tokens) but
+    can never keep an ungrounded one."""
+    raw = answer or ""
     m = _FENCE_RE.search(raw)
     if m:
         raw = m.group(1)
@@ -135,7 +173,23 @@ def valid_ner_json(text: str) -> bool:
         obj = json.loads(raw.strip())
     except Exception:
         return False
-    return isinstance(obj, dict) and any(str(k).lower() in _NER_KEYS for k in obj)
+    if not isinstance(obj, dict):
+        return False
+    hay = _ner_source(prompt).lower()
+    any_ent = False
+    for v in obj.values():
+        if not isinstance(v, list):
+            return False
+        for e in v:
+            if not isinstance(e, str):
+                return False
+            es = e.strip().lower()
+            if not es:
+                continue
+            any_ent = True
+            if es not in hay:
+                return False  # hallucinated entity -> escalate
+    return any_ent
 
 
 def valid_json(text: str) -> bool:
