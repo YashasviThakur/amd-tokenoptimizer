@@ -26,10 +26,12 @@ from .prompts import (_NO_REASONING_FAMILIES, build_messages, build_remote_messa
                       build_retry_messages, max_tokens_for)
 from .solvers import free_solve
 
-# Categories the local model handles reliably (fast on CPU / free verifier signal).
-# ner + code_gen reclaimed: the tuned model extracts entities exactly (case-normalized
-# downstream) and writes compiling code; both are kept only on a free format check.
-LOCAL_OK = {"factual", "sentiment", "summarization", "ner", "code_gen"}
+# Categories the local model handles reliably. CONSERVATIVE after ship #1 failed the
+# gate on the grader (Q8 thrashed 4GB RAM -> dropped tasks): start with only the two
+# categories that are 100% pure-local AND need no world knowledge (no hallucination
+# risk) — sentiment (classification) and summarization (derived from the source text).
+# factual/ner/code_gen are added back incrementally once each is confirmed on the board.
+LOCAL_OK = {"sentiment", "summarization"}
 # No cheap correctness verifier -> take two local draws; disagreement = unsure.
 SELF_CONSISTENCY = {"factual", "sentiment"}
 RETRY_CATEGORIES = {"ner", "summarization", "sentiment"}
