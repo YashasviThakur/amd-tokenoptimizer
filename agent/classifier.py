@@ -67,27 +67,12 @@ def classify(prompt: str) -> str:
     if any(k in p for k in ("fix the bug", "debug", "what's wrong", "whats wrong",
                             "correct the", "error in this code", "why does this code")):
         return "code_debug"
-    # temporal day-of-week reasoning is deductive logic, not a fact lookup — route it
-    # to the logic tier (and solve_day_of_week) BEFORE the factual/math fallthrough.
-    # Requires a weekday NAME plus a day-question cue, so "what holiday is on Monday"
-    # (no cue) and "what is today's date" (no weekday) are left untouched.
-    if re.search(r"\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", p) \
-            and re.search(r"what day|which day|day of the week|\btoday\b|\byesterday\b|"
-                          r"\btomorrow\b", p):
-        return "logic"
     # syllogisms BEFORE the math check ("are all X Y?", "do all X ...?",
     # "no X are Y") — these classified as factual, which made solve_syllogism
     # dead code and sent classic logic tasks to the weakest tier.
     if re.search(r"\b(?:are|do)\s+all\b", p) or re.search(r"\bno\s+\w+s?\s+are\b", p) \
             or re.search(r"\ball\s+\w+s?\s+are\b", p):
         return "logic"
-    # numeric sequence ("7, 14, 21, 28 — what comes next?") -> math (solve_sequence).
-    # Needs a 'next' cue AND a list of >=4 comma-separated numbers, so ordinary prose
-    # that happens to contain a few numbers can never trigger it. If the solver can't
-    # prove the pattern it defers, and the math (numeric-answer) prompt still fits.
-    if re.search(r"\bnext\b", p) \
-            and re.search(r"-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?){3,}", p):
-        return "math"
     # math trigger: verb list red-teamed against grader-style word problems —
     # "find/determine/solve/compute" alone routed 72% of realistic math word
     # problems to 'factual' (= the weak local tier) before these were added.

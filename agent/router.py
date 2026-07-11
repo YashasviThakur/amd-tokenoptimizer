@@ -34,10 +34,13 @@ from .solvers import free_solve
 # entity set AND every extracted entity is grounded verbatim in the source sentence
 # (V.ner_entities_grounded). A format-only shape check can't catch a hallucinated-but-
 # well-formed entity — that check can, so NER is safe to keep locally again.
-LOCAL_OK = {"sentiment", "summarization", "code_gen", "code_debug", "ner"}
-# No cheap correctness verifier -> take two local draws; disagreement = unsure. ner is
-# here too: its gate REQUIRES two agreeing (and grounded) draws before it keeps local.
-SELF_CONSISTENCY = {"factual", "sentiment", "ner"}
+# NER REVERTED to remote (ship #3's proven config): the grounded gate blocks
+# hallucinated entities but NOT incompleteness / mis-typed keys, which the 3B still
+# gets wrong on the hidden set — measured on the grader as ship 6's -2 (14/19). code_*
+# stays local, gated by the differential-execution oracle (OOD-proven 0 wrong-kept).
+LOCAL_OK = {"sentiment", "summarization", "code_gen", "code_debug"}
+# No cheap correctness verifier -> take two local draws; disagreement = unsure.
+SELF_CONSISTENCY = {"factual", "sentiment"}
 RETRY_CATEGORIES = {"ner", "summarization", "sentiment"}
 
 # Base trust per category for a ~3B local model (measured on the practice set:
@@ -585,8 +588,8 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
     if have_local:
         messages = build_messages(category, prompt)
         n = config.local_samples_hard if category in SELF_CONSISTENCY else 1
-        if category in ("ner", "code_gen", "code_debug"):
-            n = max(n, 2)  # the NER + differential-code gates compare two draws
+        if category in ("code_gen", "code_debug"):
+            n = max(n, 2)  # the differential-code oracle compares two draws
         # Timing guard: code answers at n=2 on a 2-vCPU box are the slowest local
         # path (measured ~5s short / ~31s long). Cap the local code draft so SHORT
         # functions stay local (fast, free) while a LONG one truncates -> won't
