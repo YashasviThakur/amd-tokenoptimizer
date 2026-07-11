@@ -26,12 +26,13 @@ from .prompts import (_NO_REASONING_FAMILIES, build_messages, build_remote_messa
                       build_retry_messages, max_tokens_for)
 from .solvers import free_solve
 
-# Categories the local model handles reliably. CONSERVATIVE after ship #1 failed the
-# gate on the grader (Q8 thrashed 4GB RAM -> dropped tasks): start with only the two
-# categories that are 100% pure-local AND need no world knowledge (no hallucination
-# risk) — sentiment (classification) and summarization (derived from the source text).
-# factual/ner/code_gen are added back incrementally once each is confirmed on the board.
-LOCAL_OK = {"sentiment", "summarization", "ner", "code_gen"}
+# Categories the local model may answer for 0 tokens. sentiment + summarization are
+# pure-local and need no world knowledge (no hallucination risk). code_gen is included
+# but GATED by the execution oracle (_confidence -> V.run_extracted_tests): its answer
+# is kept only when the generated code passes the prompt's OWN I/O examples, otherwise
+# it escalates. ner is DROPPED — its format-only confidence check (valid JSON shape)
+# can't catch a wrong-but-well-formed answer, so it's unsafe to keep locally.
+LOCAL_OK = {"sentiment", "summarization", "code_gen"}
 # No cheap correctness verifier -> take two local draws; disagreement = unsure.
 SELF_CONSISTENCY = {"factual", "sentiment"}
 RETRY_CATEGORIES = {"ner", "summarization", "sentiment"}
@@ -49,7 +50,7 @@ PRIOR = {
     "summarization": 0.55,  # PROVISIONAL — retune vs measured tuned-model per-category accuracy before shipping
     "ner": 0.74, "factual": 0.55,
     "math": 0.28, "logic": 0.28, "code_debug": 0.33,
-    "code_gen": 0.55,  # reclaimed local (measured ~90%); kept only when V.code_compiles (see _confidence)
+    "code_gen": 0.55,  # unused for code_gen: _confidence overrides it with the execution oracle (pass->0.9, else->0.2)
 }
 
 
@@ -74,9 +75,13 @@ def _confidence(category: str, prompt: str, samples: list[str]) -> float:
     elif category == "factual":
         c += -0.40 if not ans.strip() else 0.0
     elif category == "code_gen":
-        # syntactically valid code -> keep local (0.55+0.10=0.65); non-compiling
-        # stays at 0.55 (< 0.60) and escalates. The only free correctness proxy.
-        c += 0.10 if V.code_compiles(ans) else 0.0
+        # EXECUTION ORACLE (replaces the compile-only proxy): keep local ONLY when the
+        # generated code actually PASSES the concrete I/O examples embedded in THIS
+        # prompt — a true per-prompt correctness check that re-derives correctness per
+        # prompt (can't overfit) and can never keep a wrong answer. 'pass' -> 0.9
+        # (>= escalate_threshold, keep local); 'fail'/'no_tests' -> 0.2 (< threshold,
+        # escalate to Fireworks). Overrides the prior outright, hence `=` not `+=`.
+        c = 0.9 if V.run_extracted_tests(prompt, ans) == "pass" else 0.2
     return max(0.0, min(1.0, c))
 
 

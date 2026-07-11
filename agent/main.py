@@ -321,8 +321,48 @@ def selftest() -> int:
     except Exception as e:
         print(f"[selftest] FAIL: {e}")
         return 1
-    print("[selftest] PASS" if ok else f"[selftest] FAIL: {out}")
-    return 0 if ok else 1
+
+    # ── code_gen EXECUTION-ORACLE gate (offline: exercises V.run_extracted_tests +
+    # router._confidence directly — no local model or Fireworks needed) ────────────
+    try:
+        from . import verifiers as V
+        from .router import _confidence
+        thr = config.escalate_threshold
+        # correct code that PASSES the prompt's embedded example -> kept LOCAL
+        cg_prompt = ("Write a Python function `reverse_string(s)` that returns the string "
+                     "s reversed. For example, reverse_string('hello') == 'olleh'.")
+        cg_right = "def reverse_string(s):\n    return s[::-1]"
+        # WRONG code for the same spec -> fails the example -> ESCALATES
+        cg_wrong = "def reverse_string(s):\n    return s"
+        # rules-only spec, no parseable I/O example -> no_tests -> ESCALATES
+        cg_none_prompt = ("Write a Python function `fizzbuzz(n)` that returns 'FizzBuzz' if n is "
+                          "divisible by both 3 and 5, 'Fizz' if divisible by 3, 'Buzz' if "
+                          "divisible by 5, otherwise the string form of n.")
+        cg_none = "def fizzbuzz(n):\n    return 'Fizz'"
+        verdicts = {
+            "pass": V.run_extracted_tests(cg_prompt, cg_right),
+            "fail": V.run_extracted_tests(cg_prompt, cg_wrong),
+            "no_tests": V.run_extracted_tests(cg_none_prompt, cg_none),
+        }
+        cg_ok = (
+            verdicts["pass"] == "pass"
+            and _confidence("code_gen", cg_prompt, [cg_right]) >= thr       # kept local
+            and verdicts["fail"] == "fail"
+            and _confidence("code_gen", cg_prompt, [cg_wrong]) < thr        # escalates
+            and verdicts["no_tests"] == "no_tests"
+            and _confidence("code_gen", cg_none_prompt, [cg_none]) < thr    # escalates
+        )
+    except Exception as e:
+        print(f"[selftest] FAIL: code_gen gate raised {e}")
+        return 1
+
+    passed = ok and cg_ok
+    if passed:
+        print("[selftest] PASS")
+    else:
+        print(f"[selftest] FAIL: contract_ok={ok} code_gen_gate_ok={cg_ok} "
+              f"verdicts={verdicts} out={out}")
+    return 0 if passed else 1
 
 
 if __name__ == "__main__":
