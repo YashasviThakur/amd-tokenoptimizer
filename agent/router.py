@@ -34,11 +34,11 @@ from .solvers import free_solve
 # entity set AND every extracted entity is grounded verbatim in the source sentence
 # (V.ner_entities_grounded). A format-only shape check can't catch a hallucinated-but-
 # well-formed entity — that check can, so NER is safe to keep locally again.
-# ner is back (ship 9), now gated by the HARDENED gate: grounding + two-draw agreement
-# + COMPLETENESS (every source proper noun extracted). The completeness check is what
-# ship 6 lacked — it rejects the incomplete extractions that cost the gate then (OOD:
-# 0 wrong-kept). code_* stays local via the differential-execution oracle.
-LOCAL_OK = {"sentiment", "summarization", "code_gen", "code_debug", "ner"}
+# code_* DROPPED from local (ship 13): n=2 code drafts, serialized on the grader's
+# 2-vCPU locked model, blew the 10-min budget -> TIMEOUT (ship 9/11, even in-process).
+# The 2-vCPU box only fits LIGHT local work. Keep sentiment/summarization + hardened NER
+# (short outputs, ship-6-proven to fit); code escalates to Fireworks.
+LOCAL_OK = {"sentiment", "summarization", "ner"}
 # No cheap correctness verifier -> take two local draws; disagreement = unsure.
 SELF_CONSISTENCY = {"factual", "sentiment", "ner"}
 RETRY_CATEGORIES = {"ner", "summarization", "sentiment"}
@@ -634,8 +634,8 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
     if have_local:
         messages = build_messages(category, prompt)
         n = config.local_samples_hard if category in SELF_CONSISTENCY else 1
-        if category in ("ner", "code_gen", "code_debug"):
-            n = max(n, 2)  # the NER completeness/agreement + code oracles need two draws
+        if category == "ner":
+            n = max(n, 2)  # the NER completeness/agreement gate needs two draws
         # Timing guard: code answers at n=2 on a 2-vCPU box are the slowest local
         # path (measured ~5s short / ~31s long). Cap the local code draft so SHORT
         # functions stay local (fast, free) while a LONG one truncates -> won't
