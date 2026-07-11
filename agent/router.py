@@ -31,7 +31,7 @@ from .solvers import free_solve
 # categories that are 100% pure-local AND need no world knowledge (no hallucination
 # risk) — sentiment (classification) and summarization (derived from the source text).
 # factual/ner/code_gen are added back incrementally once each is confirmed on the board.
-LOCAL_OK = {"sentiment", "summarization"}
+LOCAL_OK = {"sentiment", "summarization", "ner", "code_gen"}
 # No cheap correctness verifier -> take two local draws; disagreement = unsure.
 SELF_CONSISTENCY = {"factual", "sentiment"}
 RETRY_CATEGORIES = {"ner", "summarization", "sentiment"}
