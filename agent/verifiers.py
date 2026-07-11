@@ -9,6 +9,7 @@ answers pure-arithmetic math for free.
 from __future__ import annotations
 
 import ast
+import builtins
 import json
 import operator as _op
 import os
@@ -16,6 +17,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
 
 _LABELS = {"positive", "negative", "neutral"}
 _NUM_RE = re.compile(r"-?\d[\d,]*\.?\d*")
@@ -488,44 +490,70 @@ _DIFF_INPUTS_2 = [[5, 3], [0, 0], [10, 2], [7, 7], [3, 5],
                   ["abc", "b"], [[1, 2, 3], 2], [[1, 2], [3, 4]]]
 
 
-def _run_battery(src: str, name: str, inputs) -> "list | None":
-    """Run `name` from `src` against every input tuple in a locked-down subprocess.
-    Returns a list of ['ok', repr(result)] | ['err', ExcType] aligned to `inputs`,
-    or None on any failure (compile error, timeout, crash) -> caller escalates."""
-    tmpfile = None
+# Builtins the executed snippet may use — everything else (open, __import__, exec…) is
+# absent, so the code can't touch the filesystem, network, or process. No I/O = safe.
+_SAFE_BUILTINS = {n: getattr(builtins, n) for n in (
+    "abs", "all", "any", "bool", "chr", "dict", "divmod", "enumerate", "filter", "float",
+    "format", "frozenset", "int", "isinstance", "len", "list", "map", "max", "min", "ord",
+    "pow", "range", "repr", "reversed", "round", "set", "sorted", "str", "sum", "tuple",
+    "zip", "True", "False", "None") if hasattr(builtins, n)}
+
+
+_BANNED_CALLS = {"eval", "exec", "compile", "open", "__import__", "input", "exit", "quit",
+                 "globals", "locals", "vars", "getattr", "setattr", "delattr"}
+
+
+def _ast_safe(src: str) -> bool:
+    """True only if `src` is a plain function def with NO while-loop (=> guaranteed to
+    terminate on our small inputs), no import / scope-escape, no dunder access, and no
+    dangerous call. This is what makes IN-PROCESS execution safe: no fork, no hang, no
+    I/O. A rejected draw just escalates (costs tokens, never keeps a wrong answer)."""
     try:
-        harness = (
-            src + "\n\nimport json as _json\n_INPUTS = " + json.dumps(inputs) + "\n"
-            "_out = []\n"
-            "for _a in _INPUTS:\n"
-            "    try:\n"
-            "        _r = " + name + "(*_a)\n"
-            "        _out.append(['ok', repr(_r)])\n"
-            "    except Exception as _e:\n"
-            "        _out.append(['err', type(_e).__name__])\n"
-            "print(_json.dumps(_out))\n"
-        )
-        tmpdir = tempfile.gettempdir()
-        fd, tmpfile = tempfile.mkstemp(suffix=".py", dir=tmpdir)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(harness)
-        kwargs = dict(timeout=2, capture_output=True, cwd=tmpdir,
-                      stdin=subprocess.DEVNULL, text=True)
-        preexec = _rlimit_preexec()
-        if preexec is not None:
-            kwargs["preexec_fn"] = preexec
-        proc = subprocess.run([sys.executable, tmpfile], **kwargs)
-        if proc.returncode != 0:
-            return None
-        return json.loads(proc.stdout.strip())
+        tree = ast.parse(src)
+    except Exception:
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.While, ast.Import, ast.ImportFrom, ast.Global, ast.Nonlocal)):
+            return False  # unbounded loop / import / scope escape
+        if isinstance(node, ast.Attribute) and node.attr.startswith("__"):
+            return False  # dunder access (__globals__, __class__…)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _BANNED_CALLS:
+            return False
+    return True
+
+
+def _run_battery(src: str, name: str, inputs) -> "list | None":
+    """Execute `name` from `src` against each input IN-PROCESS (no subprocess/fork — that
+    hangs or is seccomp-killed on the grader). AST-guarded so the code can't loop forever
+    or do I/O, then run in a daemon thread with a hard wall-clock timeout as a backstop.
+    Returns [['ok', repr]|['err', ExcType]] aligned to `inputs`, or None (=> escalate)
+    on unsafe code / compile error / timeout. Never raises, never forks, never hangs."""
+    if not _ast_safe(src):
+        return None
+    ns = {"__builtins__": _SAFE_BUILTINS}
+    try:
+        exec(compile(src, "<draw>", "exec"), ns)
     except Exception:
         return None
-    finally:
-        if tmpfile:
+    fn = ns.get(name)
+    if not callable(fn):
+        return None
+
+    holder: list = [None]
+
+    def _run_all():
+        out = []
+        for a in inputs:
             try:
-                os.remove(tmpfile)
-            except Exception:
-                pass
+                out.append(["ok", repr(fn(*a))])
+            except Exception as e:
+                out.append(["err", type(e).__name__])
+        holder[0] = out
+
+    t = threading.Thread(target=_run_all, daemon=True)
+    t.start()
+    t.join(1.5)  # whole battery must finish in 1.5s; a bounded loop finishes instantly
+    return holder[0]  # None if the thread didn't finish (pathological input) -> escalate
 
 
 def _rtype(r: str) -> str:

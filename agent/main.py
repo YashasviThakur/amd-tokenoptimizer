@@ -376,38 +376,31 @@ def selftest() -> int:
         print(f"[selftest] FAIL: {e}")
         return 1
 
-    # ── code_gen EXECUTION-ORACLE gate (offline: exercises V.run_extracted_tests +
-    # router._confidence directly — no local model or Fireworks needed) ────────────
+    # ── code IN-PROCESS DIFFERENTIAL-ORACLE gate (offline: exercises V.differential_code_ok
+    # -> V._run_battery in-process + router._confidence; NO subprocess, no model) ────────
     try:
         from . import verifiers as V
         from .router import _confidence
         thr = config.escalate_threshold
-        # correct code that PASSES the prompt's embedded example -> kept LOCAL
-        cg_prompt = ("Write a Python function `reverse_string(s)` that returns the string "
-                     "s reversed. For example, reverse_string('hello') == 'olleh'.")
-        cg_right = "def reverse_string(s):\n    return s[::-1]"
-        # WRONG code for the same spec -> fails the example -> ESCALATES
-        cg_wrong = "def reverse_string(s):\n    return s"
-        # rules-only spec, no parseable I/O example -> no_tests -> ESCALATES
-        cg_none_prompt = ("Write a Python function `fizzbuzz(n)` that returns 'FizzBuzz' if n is "
-                          "divisible by both 3 and 5, 'Fizz' if divisible by 3, 'Buzz' if "
-                          "divisible by 5, otherwise the string form of n.")
-        cg_none = "def fizzbuzz(n):\n    return 'Fizz'"
+        cg_prompt = "Write a Python function `reverse_string(s)` that returns the string s reversed."
+        r1 = "def reverse_string(s):\n    return s[::-1]"
+        r2 = "def reverse_string(s):\n    out = ''\n    for c in s:\n        out = c + out\n    return out"
+        wrong = "def reverse_string(s):\n    return s"
+        unsafe = "def reverse_string(s):\n    while True:\n        pass"  # while-loop -> AST-rejected
         verdicts = {
-            "pass": V.run_extracted_tests(cg_prompt, cg_right),
-            "fail": V.run_extracted_tests(cg_prompt, cg_wrong),
-            "no_tests": V.run_extracted_tests(cg_none_prompt, cg_none),
+            "run_inproc": V._run_battery(r1, "reverse_string", [["abc"], ["Hi"]]),   # in-process exec
+            "ast_reject": V._ast_safe(unsafe),                                        # while -> False
         }
         cg_ok = (
-            verdicts["pass"] == "pass"
-            and _confidence("code_gen", cg_prompt, [cg_right]) >= thr       # kept local
-            and verdicts["fail"] == "fail"
-            and _confidence("code_gen", cg_prompt, [cg_wrong]) < thr        # escalates
-            and verdicts["no_tests"] == "no_tests"
-            and _confidence("code_gen", cg_none_prompt, [cg_none]) < thr    # escalates
+            verdicts["run_inproc"] == [["ok", "'cba'"], ["ok", "'iH'"]]      # ran IN-PROCESS, correct
+            and verdicts["ast_reject"] is False                             # while-loop draw rejected
+            and _confidence("code_gen", cg_prompt, [r1, r2]) >= thr         # two agreeing -> kept local
+            and _confidence("code_gen", cg_prompt, [r1, wrong]) < thr       # divergent -> escalates
+            and _confidence("code_gen", cg_prompt, [r1]) < thr             # single draw -> escalates
+            and _confidence("code_debug", cg_prompt, [r1, wrong]) < thr    # code_debug gated the same
         )
     except Exception as e:
-        print(f"[selftest] FAIL: code_gen gate raised {e}")
+        print(f"[selftest] FAIL: code gate raised {e}")
         return 1
 
     # ── NER grounded-gate (offline: exercises V.ner_entities_grounded + router._confidence
