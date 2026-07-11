@@ -38,13 +38,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
  && pip install --no-cache-dir "huggingface_hub>=0.23" \
  && rm -rf /var/lib/apt/lists/*
 
-# Bundle the fine-tuned local model (Q8_0, downloaded at build from HF). Q8 PRESERVES
-# accuracy — Q4/Q6 degrade this fine-tuned 3B to ~80% (measured). Ship #1 proved Q8
-# FITS + RUNS in the grader (it returned an accuracy score 14/19, not a crash/timeout);
-# the 2 lost tasks were factual hallucinations, now kept REMOTE (LOCAL_OK excludes it).
+# Bundle the fine-tuned Q8_0 model. Q8 PRESERVES accuracy (Q4/Q6 degrade this 3B to
+# ~80%). The 3.1GB model as ONE Docker layer TIMED OUT the grader's pull (PULL_ERROR);
+# fetch it in 8 byte-range chunks -> 8 separate ~410MB layers that Docker pulls
+# concurrently and retries INDIVIDUALLY, so a flaky/slow pull survives where one huge
+# layer can't. Reassembled once at container start (start.sh) — byte-identical to the
+# original file, so ZERO accuracy change. 8 * 410684460 == 3285475680 (exact file size).
 ARG HF_GGUF_REPO=yashasvithakur/tokenopt-3b-gguf
-RUN python -c "from huggingface_hub import hf_hub_download; \
-hf_hub_download('${HF_GGUF_REPO}','tokenopt-3b-q8_0.gguf', local_dir='/models')"
+ENV MURL=https://huggingface.co/${HF_GGUF_REPO}/resolve/main/tokenopt-3b-q8_0.gguf
+RUN mkdir -p /models
+RUN python -c "import urllib.request as u,os;c=410684460;i=0;r=u.Request(os.environ['MURL'],headers={'Range':'bytes=%d-%d'%(i*c,(i+1)*c-1),'User-Agent':'curl/8'});d=u.urlopen(r,timeout=900).read();assert len(d)==c;open('/models/mp_%d'%i,'wb').write(d)"
+RUN python -c "import urllib.request as u,os;c=410684460;i=1;r=u.Request(os.environ['MURL'],headers={'Range':'bytes=%d-%d'%(i*c,(i+1)*c-1),'User-Agent':'curl/8'});d=u.urlopen(r,timeout=900).read();assert len(d)==c;open('/models/mp_%d'%i,'wb').write(d)"
+RUN python -c "import urllib.request as u,os;c=410684460;i=2;r=u.Request(os.environ['MURL'],headers={'Range':'bytes=%d-%d'%(i*c,(i+1)*c-1),'User-Agent':'curl/8'});d=u.urlopen(r,timeout=900).read();assert len(d)==c;open('/models/mp_%d'%i,'wb').write(d)"
+RUN python -c "import urllib.request as u,os;c=410684460;i=3;r=u.Request(os.environ['MURL'],headers={'Range':'bytes=%d-%d'%(i*c,(i+1)*c-1),'User-Agent':'curl/8'});d=u.urlopen(r,timeout=900).read();assert len(d)==c;open('/models/mp_%d'%i,'wb').write(d)"
+RUN python -c "import urllib.request as u,os;c=410684460;i=4;r=u.Request(os.environ['MURL'],headers={'Range':'bytes=%d-%d'%(i*c,(i+1)*c-1),'User-Agent':'curl/8'});d=u.urlopen(r,timeout=900).read();assert len(d)==c;open('/models/mp_%d'%i,'wb').write(d)"
+RUN python -c "import urllib.request as u,os;c=410684460;i=5;r=u.Request(os.environ['MURL'],headers={'Range':'bytes=%d-%d'%(i*c,(i+1)*c-1),'User-Agent':'curl/8'});d=u.urlopen(r,timeout=900).read();assert len(d)==c;open('/models/mp_%d'%i,'wb').write(d)"
+RUN python -c "import urllib.request as u,os;c=410684460;i=6;r=u.Request(os.environ['MURL'],headers={'Range':'bytes=%d-%d'%(i*c,(i+1)*c-1),'User-Agent':'curl/8'});d=u.urlopen(r,timeout=900).read();assert len(d)==c;open('/models/mp_%d'%i,'wb').write(d)"
+RUN python -c "import urllib.request as u,os;c=410684460;i=7;r=u.Request(os.environ['MURL'],headers={'Range':'bytes=%d-%d'%(i*c,(i+1)*c-1),'User-Agent':'curl/8'});d=u.urlopen(r,timeout=900).read();assert len(d)==c;open('/models/mp_%d'%i,'wb').write(d)"
 
 COPY agent/requirements.txt ./agent/requirements.txt
 RUN pip install --no-cache-dir -r agent/requirements.txt
@@ -109,4 +119,8 @@ ENV INPUT_PATH=/input/tasks.json \
     BATCH_CATEGORIES=factual \
     LOCAL_CODE_MAX_TOKENS=96
 
-ENTRYPOINT ["python", "-m", "agent.main"]
+# Reassemble the 8 chunked model layers into the single GGUF once at startup (byte-
+# identical concat), then run the agent. Idempotent: skips if already assembled.
+RUN printf '#!/bin/sh\nset -e\nM=/models/tokenopt-3b-q8_0.gguf\n[ -s "$M" ] || cat /models/mp_0 /models/mp_1 /models/mp_2 /models/mp_3 /models/mp_4 /models/mp_5 /models/mp_6 /models/mp_7 > "$M"\nexec python -m agent.main "$@"\n' > /app/start.sh \
+ && chmod +x /app/start.sh
+ENTRYPOINT ["/bin/sh", "/app/start.sh"]
