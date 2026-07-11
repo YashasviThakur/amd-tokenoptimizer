@@ -221,14 +221,22 @@ def ner_source_covered(prompt: str, answer: str) -> bool:
         for v in obj.values() if isinstance(v, list)
         for e in v if isinstance(e, str) and str(e).strip())
     source = _ner_source(prompt)
+    _lead_stop = _NER_STOP | {"on", "in", "at", "by", "from", "to", "with", "of",
+                              "for", "as", "but", "and", "or", "so", "if"}
     for sent in re.split(r"(?<=[.!?])\s+", source):
         for mm in re.finditer(r"[A-Z][A-Za-z.'&-]*(?:\s+[A-Z][A-Za-z.'&-]*)*", sent):
             span = mm.group(0).strip().rstrip(".,;:!?'\"").lower()  # drop trailing sentence punct
             if not span:
                 continue
             words = span.split()
-            if len(words) == 1 and words[0] in _NER_STOP:
-                continue  # a lone sentence-initial stopword is not an entity
+            # a sentence-initial capitalized stopword glues onto the entity that
+            # follows it ("On March 15 2023" -> the entity is "march 15 2023");
+            # strip leading stopwords so the containment check sees the entity.
+            while words and words[0] in _lead_stop:
+                words = words[1:]
+            if not words:
+                continue  # the whole span was stopwords -> not an entity
+            span = " ".join(words)
             if span not in vals:
                 return False  # a source proper noun was NOT extracted -> escalate
     return True
