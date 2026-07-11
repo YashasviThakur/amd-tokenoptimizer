@@ -34,13 +34,13 @@ from .solvers import free_solve
 # entity set AND every extracted entity is grounded verbatim in the source sentence
 # (V.ner_entities_grounded). A format-only shape check can't catch a hallucinated-but-
 # well-formed entity — that check can, so NER is safe to keep locally again.
-# NER REVERTED to remote (ship #3's proven config): the grounded gate blocks
-# hallucinated entities but NOT incompleteness / mis-typed keys, which the 3B still
-# gets wrong on the hidden set — measured on the grader as ship 6's -2 (14/19). code_*
-# stays local, gated by the differential-execution oracle (OOD-proven 0 wrong-kept).
-LOCAL_OK = {"sentiment", "summarization", "code_gen", "code_debug"}
+# ner is back (ship 9), now gated by the HARDENED gate: grounding + two-draw agreement
+# + COMPLETENESS (every source proper noun extracted). The completeness check is what
+# ship 6 lacked — it rejects the incomplete extractions that cost the gate then (OOD:
+# 0 wrong-kept). code_* stays local via the differential-execution oracle.
+LOCAL_OK = {"sentiment", "summarization", "code_gen", "code_debug", "ner"}
 # No cheap correctness verifier -> take two local draws; disagreement = unsure.
-SELF_CONSISTENCY = {"factual", "sentiment"}
+SELF_CONSISTENCY = {"factual", "sentiment", "ner"}
 RETRY_CATEGORIES = {"ner", "summarization", "sentiment"}
 
 # Base trust per category for a ~3B local model (measured on the practice set:
@@ -152,8 +152,12 @@ def _ner_local_ok(prompt: str, samples: list[str]) -> bool:
         return False
     if s0 != s1:              # self-consistency failure -> escalate
         return False
+    # grounding (no hallucinated entity) AND completeness (no DROPPED source entity —
+    # the ship-6 failure grounding alone missed). Both draws grounded; completeness on
+    # the agreed set. OOD-measured 0 wrong-kept with the completeness check added.
     return (V.ner_entities_grounded(prompt, samples[0])
-            and V.ner_entities_grounded(prompt, samples[1]))
+            and V.ner_entities_grounded(prompt, samples[1])
+            and V.ner_source_covered(prompt, samples[0]))
 
 
 # Families ranked by MEASURED end-to-end accuracy on our 96-task stress set.
@@ -639,8 +643,8 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
     if have_local:
         messages = build_messages(category, prompt)
         n = config.local_samples_hard if category in SELF_CONSISTENCY else 1
-        if category in ("code_gen", "code_debug"):
-            n = max(n, 2)  # the differential-code oracle compares two draws
+        if category in ("ner", "code_gen", "code_debug"):
+            n = max(n, 2)  # the NER completeness/agreement + code oracles need two draws
         # Timing guard: code answers at n=2 on a 2-vCPU box are the slowest local
         # path (measured ~5s short / ~31s long). Cap the local code draft so SHORT
         # functions stay local (fast, free) while a LONG one truncates -> won't

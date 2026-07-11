@@ -104,6 +104,8 @@ ENV INPUT_PATH=/input/tasks.json \
     MAX_TOKENS_FLOOR=2048 \
     FORCE_INSTRUCT_FIRST=1 \
     THINKING_OFF_SOFT=1 \
-    THINKING_OFF_ALL=1
+    THINKING_OFF_ALL=1 \
+    ENABLE_BATCHING=1 \
+    BATCH_CATEGORIES=factual
 
 ENTRYPOINT ["python", "-m", "agent.main"]

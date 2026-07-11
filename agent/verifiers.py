@@ -192,6 +192,46 @@ def ner_entities_grounded(prompt: str, answer: str) -> bool:
     return any_ent
 
 
+_NER_STOP = {"the", "a", "an", "in", "on", "at", "after", "before", "when", "while",
+             "he", "she", "it", "they", "we", "i", "this", "that", "these", "those",
+             "his", "her", "their", "our", "next", "last", "yesterday", "today", "tomorrow"}
+
+
+def ner_source_covered(prompt: str, answer: str) -> bool:
+    """COMPLETENESS guard: every proper-noun span in the source must appear in some
+    extracted entity value. Grounding stops HALLUCINATIONS (entities not in the text);
+    this stops the opposite failure that grounding can't see — an INCOMPLETE extraction
+    that DROPPED a real entity, which is what kept ship 6's wrong NER answers local (14/
+    19). Conservative: a multi-word title span may over-reject -> escalate (safe); it
+    never passes an answer that omitted a capitalized entity. OOD-measured 0 wrong-kept."""
+    raw = answer or ""
+    m = _FENCE_RE.search(raw)
+    if m:
+        raw = m.group(1)
+    try:
+        obj = json.loads(raw.strip())
+    except Exception:
+        return False
+    if not isinstance(obj, dict):
+        return False
+    vals = " || ".join(
+        str(e).strip().lower()
+        for v in obj.values() if isinstance(v, list)
+        for e in v if isinstance(e, str) and str(e).strip())
+    source = _ner_source(prompt)
+    for sent in re.split(r"(?<=[.!?])\s+", source):
+        for mm in re.finditer(r"[A-Z][A-Za-z.'&-]*(?:\s+[A-Z][A-Za-z.'&-]*)*", sent):
+            span = mm.group(0).strip().rstrip(".,;:!?'\"").lower()  # drop trailing sentence punct
+            if not span:
+                continue
+            words = span.split()
+            if len(words) == 1 and words[0] in _NER_STOP:
+                continue  # a lone sentence-initial stopword is not an entity
+            if span not in vals:
+                return False  # a source proper noun was NOT extracted -> escalate
+    return True
+
+
 def valid_json(text: str) -> bool:
     raw = text or ""
     m = _FENCE_RE.search(raw)
