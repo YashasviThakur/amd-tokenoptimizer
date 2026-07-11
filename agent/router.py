@@ -34,11 +34,14 @@ from .solvers import free_solve
 # entity set AND every extracted entity is grounded verbatim in the source sentence
 # (V.ner_entities_grounded). A format-only shape check can't catch a hallucinated-but-
 # well-formed entity — that check can, so NER is safe to keep locally again.
-# code_* DROPPED from local (ship 13): n=2 code drafts, serialized on the grader's
-# 2-vCPU locked model, blew the 10-min budget -> TIMEOUT (ship 9/11, even in-process).
-# The 2-vCPU box only fits LIGHT local work. Keep sentiment/summarization + hardened NER
-# (short outputs, ship-6-proven to fit); code escalates to Fireworks.
-LOCAL_OK = {"sentiment", "summarization", "ner"}
+# MAX config (ship 15): code is BACK. The ship 9/11 TIMEOUTs were the organizer's
+# overloaded backend (their announcement), not our runtime — the FULL local workload
+# (sentiment n=2 + summarization + ner n=2 + FOUR code tasks n=2 @ cap 96) measures
+# 124s serialized at grader-like 2 threads, and the LOCAL_TIME_BUDGET_S guard bounds
+# the worst case deterministically (overflow -> remote; never a TIMEOUT). Gates:
+# ner = grounding + agreement + completeness (OOD 9/12 kept, 0 wrong-kept);
+# code = in-process differential oracle (OOD 12/12 kept, 0 wrong-kept).
+LOCAL_OK = {"sentiment", "summarization", "ner", "code_gen", "code_debug"}
 # No cheap correctness verifier -> take two local draws; disagreement = unsure.
 SELF_CONSISTENCY = {"factual", "sentiment", "ner"}
 RETRY_CATEGORIES = {"ner", "summarization", "sentiment"}
@@ -618,8 +621,13 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
     # a dead-remote rescue only. A long prompt also skips local (slow CPU prefill
     # on 2 vCPU risks the <30s/task limit).
     too_long = len(prompt) > config.local_max_prompt_chars
+    # Local wall-time budget: cumulative time already spent inside local generation
+    # (accumulated below on the shared `local` object). Once spent, remaining tasks
+    # go remote — deterministic TIMEOUT protection on the 2-vCPU serialized model.
+    local_exhausted = (have_local and
+                       getattr(local, "_time_spent", 0.0) >= config.local_time_budget_s)
     if remote_ok and (config.remote_first or prefer_remote or not have_local
-                      or category not in LOCAL_OK or too_long):
+                      or category not in LOCAL_OK or too_long or local_exhausted):
         r = _fireworks(task_id, category, prompt, remote, deadline=deadline)
         # Dead-remote rescue: every candidate failed with nothing to show (the
         # grader's Fireworks access being down does exactly this) -> a local answer
@@ -634,8 +642,8 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
     if have_local:
         messages = build_messages(category, prompt)
         n = config.local_samples_hard if category in SELF_CONSISTENCY else 1
-        if category == "ner":
-            n = max(n, 2)  # the NER completeness/agreement gate needs two draws
+        if category in ("ner", "code_gen", "code_debug"):
+            n = max(n, 2)  # the NER completeness/agreement + differential-code gates need two draws
         # Timing guard: code answers at n=2 on a 2-vCPU box are the slowest local
         # path (measured ~5s short / ~31s long). Cap the local code draft so SHORT
         # functions stay local (fast, free) while a LONG one truncates -> won't
@@ -644,20 +652,28 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
         mt = max_tokens_for(category)
         if category in ("code_gen", "code_debug"):
             mt = min(mt, config.local_code_max_tokens)
+        _t_local = _time.time()
         try:
             samples = local.chat(config.local_model_path, messages,
                                  max_tokens=mt,
                                  temperature=0.0 if n == 1 else 0.4, n=n)
         except Exception:
             samples = []
+        finally:
+            # accumulate spent local wall-time on the shared model object (thread-safe
+            # enough: worst case a lost update lets one extra task through the budget)
+            local._time_spent = getattr(local, "_time_spent", 0.0) + (_time.time() - _t_local)
         conf = _confidence(category, prompt, samples) if samples else 0.0
 
         if samples and conf >= config.escalate_threshold:
             return {"task_id": task_id, "answer": samples[0].strip(), "route": "local",
                     "category": category, "tokens": 0, "confidence": round(conf, 3)}
 
-        # 3b) one free strict local retry before spending tokens (opt-in)
-        if samples and config.local_retry and category in RETRY_CATEGORIES:
+        # 3b) one free strict local retry before spending tokens (opt-in) — also
+        # skipped once the local wall-time budget is spent, and billed against it.
+        if (samples and config.local_retry and category in RETRY_CATEGORIES
+                and getattr(local, "_time_spent", 0.0) < config.local_time_budget_s):
+            _t_local = _time.time()
             try:
                 retry = local.chat(config.local_model_path, build_retry_messages(category, prompt),
                                    max_tokens=max_tokens_for(category), temperature=0.0, n=1)
@@ -667,6 +683,8 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
                             "confidence": round(_confidence(category, prompt, retry), 3)}
             except Exception:
                 pass
+            finally:
+                local._time_spent = getattr(local, "_time_spent", 0.0) + (_time.time() - _t_local)
 
         # 4) escalate low-confidence local answer to Fireworks — but pass the local
         # answer as a fallback so a dead-remote grader can't turn a usable local

@@ -368,9 +368,9 @@ def selftest() -> int:
               and by["st11"].strip() == "20"              # SAVINGS asked, not sale price
               and by["st12"].strip().lower() == "bob"     # ordinal: SECOND tallest
               and by["st13"].strip() == ""                # "write a program" != math solver
-              and by["st14"].strip() == ""                # sequence solver reverted -> defers
-              and by["st15"].strip() == ""                # unit-conversion solver reverted -> defers
-              and by["st16"].strip() == ""                # day-of-week solver reverted -> defers
+              and by["st14"].strip() == "15"              # arithmetic sequence next-term
+              and by["st15"].strip() == "120"             # exact time conversion
+              and by["st16"].strip().lower() == "monday"  # day-of-week anchor+offset
               and by["st17"].strip() == "")               # prime sequence: solver deferred
     except Exception as e:
         print(f"[selftest] FAIL: {e}")

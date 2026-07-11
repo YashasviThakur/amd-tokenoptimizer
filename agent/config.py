@@ -129,6 +129,13 @@ class Config:
     # truncates a long one so it won't compile -> the differential oracle escalates
     # it to Fireworks. Only bounds the code path; other categories keep their ceiling.
     local_code_max_tokens: int = int(os.getenv("LOCAL_CODE_MAX_TOKENS", "160"))
+    # HARD ceiling on CUMULATIVE local-model generation wall-time for the whole run.
+    # The local model is single-locked and the grader has 2 vCPUs, so local work is
+    # serialized — an unbounded local queue is exactly how a run TIMEOUTs. Once the
+    # budget is spent, every remaining task routes remote (costs tokens, never blows
+    # the 10-min limit). The dead-remote rescue path is exempt (a rescue answer beats
+    # an empty one even over budget).
+    local_time_budget_s: float = float(os.getenv("LOCAL_TIME_BUDGET_S", "300"))
 
     # ZERO-TOKEN mode: never call Fireworks — solvers + the bundled local model
     # answer everything. 0 tokens is the unbeatable floor of an ascending-token

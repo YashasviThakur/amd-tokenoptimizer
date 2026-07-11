@@ -117,7 +117,8 @@ ENV INPUT_PATH=/input/tasks.json \
     THINKING_OFF_ALL=1 \
     ENABLE_BATCHING=1 \
     BATCH_CATEGORIES=factual \
-    LOCAL_CODE_MAX_TOKENS=96
+    LOCAL_CODE_MAX_TOKENS=96 \
+    LOCAL_TIME_BUDGET_S=300
 
 # Reassemble the 8 chunked model layers into the single GGUF once at startup (byte-
 # identical concat), then run the agent. Idempotent: skips if already assembled.

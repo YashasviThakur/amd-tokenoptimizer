@@ -12,6 +12,7 @@ import collections
 import graphlib
 import math
 import re
+from fractions import Fraction
 
 from .verifiers import try_arithmetic  # pure expression + "x% of y"
 
@@ -233,9 +234,17 @@ def solve_math_word(prompt: str) -> str | None:
     """
     pl = prompt.lower()
 
+    # A modifier wrapping the aggregate ("TWICE the sum of 3 and 4", "half the
+    # average of ...", "5 more than the total of ...") makes the aggregate a
+    # SUB-expression — answering just the aggregate is a confident wrong answer
+    # (red-teamed: 'twice the sum of 3 and 4' -> said 7, true 14). Defer instead.
+    _aggr_modified = re.search(
+        r"\b(?:twice|double[ds]?|triple[ds]?|half(?:\s+of)?|\d+\s+times|"
+        r"more\s+than|less\s+than|minus|plus)\b[^.?!]*\b(?:sum|total|average|mean)\b", pl)
+
     # average / mean of an explicit list: "average of 12, 18, and 30"
     am = re.search(r"(?:average|mean)\s+of\s+([\d\.\s,and]+?)\s*[.?]", pl)
-    if am and "speed" not in pl and "rate" not in pl and "per " not in pl:
+    if am and not _aggr_modified and "speed" not in pl and "rate" not in pl and "per " not in pl:
         nums = re.findall(r"\d+(?:\.\d+)?", am.group(1))
         if len(nums) >= 2:
             vals = [float(x) for x in nums]
@@ -243,7 +252,7 @@ def solve_math_word(prompt: str) -> str | None:
 
     # sum / total of an explicit list: "the sum of 3, 5, and 7"
     sm = re.search(r"(?:sum|total)\s+of\s+([\d\.\s,and]+?)\s*[.?]", pl)
-    if sm:
+    if sm and not _aggr_modified:
         nums = re.findall(r"\d+(?:\.\d+)?", sm.group(1))
         if len(nums) >= 2:
             return _fmt(sum(float(x) for x in nums))
@@ -713,16 +722,188 @@ def solve_row_middle(prompt: str) -> str | None:
     return nm.group(1) if nm else None
 
 
+def solve_sequence(prompt: str) -> str | None:
+    """Next term of an EXPLICIT numeric sequence, but only when the pattern is
+    PROVABLY arithmetic (constant difference) or geometric (constant ratio) across
+    EVERY consecutive pair. Requires a comma/space list of >=4 terms and a 'next'
+    question; squares/Fibonacci/primes/anything-else fail the uniform-pattern test
+    and defer. Exactness via Fraction, so no float round-off decides a term."""
+    p = prompt.lower()
+    # must be asking for the NEXT term (not a sum, an nth term, or a missing middle)
+    if not re.search(r"\bnext\b", p):
+        return None
+    if re.search(r"\bmissing\b|\bnth\b|\bn-?th\b|\bsum\b|\bmean\b|\baverage\b", p):
+        return None
+    # an explicit list of >=4 numbers separated by commas (the sequence itself)
+    lm = re.search(r"(-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?){3,})", p)
+    if not lm:
+        return None
+    seq = re.findall(r"-?\d+(?:\.\d+)?", lm.group(1))
+    # every number in the prompt must belong to the list — a stray number ("the
+    # 5th term", "starts at 2") means we can't trust the operand set, so defer.
+    if len(re.findall(r"-?\d+(?:\.\d+)?", p)) != len(seq):
+        return None
+    vals = [Fraction(x) for x in seq]
+    diffs = [vals[i + 1] - vals[i] for i in range(len(vals) - 1)]
+    if all(d == diffs[0] for d in diffs):  # arithmetic
+        return _fmt(float(vals[-1] + diffs[0]))
+    if all(v != 0 for v in vals[:-1]):
+        ratios = [vals[i + 1] / vals[i] for i in range(len(vals) - 1)]
+        if all(r == ratios[0] for r in ratios):  # geometric
+            return _fmt(float(vals[-1] * ratios[0]))
+    return None  # not a uniform arithmetic/geometric progression -> defer
+
+
+# Exact unit conversions ONLY. Each family maps a unit word -> (family_tag, factor
+# into the family's base unit). A conversion fires only when a source and a target
+# unit of the SAME family are DIRECTLY connected by a conversion phrase (below),
+# with exactly one number in the prompt — so a word problem that merely mentions
+# two units ("grams of sugar in a 2 kg cake") never matches.
+_UNIT_FACTOR = {
+    "second": ("t", 1), "seconds": ("t", 1), "sec": ("t", 1), "secs": ("t", 1),
+    "minute": ("t", 60), "minutes": ("t", 60), "min": ("t", 60), "mins": ("t", 60),
+    "hour": ("t", 3600), "hours": ("t", 3600), "hr": ("t", 3600), "hrs": ("t", 3600),
+    "day": ("t", 86400), "days": ("t", 86400), "week": ("t", 604800), "weeks": ("t", 604800),
+    "kilometer": ("L", 1000), "kilometers": ("L", 1000), "kilometre": ("L", 1000),
+    "kilometres": ("L", 1000), "km": ("L", 1000),
+    "meter": ("L", 1), "meters": ("L", 1), "metre": ("L", 1), "metres": ("L", 1),
+    "kilogram": ("m", 1000), "kilograms": ("m", 1000), "kg": ("m", 1000),
+    "gram": ("m", 1), "grams": ("m", 1), "gramme": ("m", 1), "grammes": ("m", 1),
+}
+_UNIT_ALT = "|".join(sorted(map(re.escape, _UNIT_FACTOR), key=len, reverse=True))
+# Templates. i<2: groups (number, source, target). i==2: (target, number, source).
+# The source/target units are directly joined by a conversion connector, so prose
+# with an intervening noun ("grams OF SUGAR are in ...") cannot match.
+_CONV_TEMPLATES = [
+    re.compile(r"convert\s+(-?\d+(?:\.\d+)?)\s*(" + _UNIT_ALT +
+               r")\b\s*(?:to|into|in)\s+(" + _UNIT_ALT + r")\b"),
+    re.compile(r"(-?\d+(?:\.\d+)?)\s*(" + _UNIT_ALT +
+               r")\b\s*(?:=|is|are|equals?|equal to|in|to|into)\s+(?:how many\s+)?(" +
+               _UNIT_ALT + r")\b"),
+    re.compile(r"how (?:many|much)\s+(" + _UNIT_ALT +
+               r")\b\s*(?:are|is)?\s*(?:there)?\s*(?:in|per)\s+(-?\d+(?:\.\d+)?)\s*(" +
+               _UNIT_ALT + r")\b"),
+]
+
+
+def solve_unit_conversion(prompt: str) -> str | None:
+    """Exact unit conversion: Celsius<->Fahrenheit, and km<->m / kg<->g / time
+    (integer containment only). Fires ONLY with exactly one number and a source+
+    target unit of one family joined by an explicit conversion phrase; anything
+    ambiguous or multi-number defers."""
+    p = prompt.lower().replace(",", "")
+    nums = re.findall(r"-?\d+(?:\.\d+)?", p)
+    if len(nums) != 1:
+        return None
+    N = float(nums[0])
+
+    # temperature C<->F (require the full unit words; a bare 'c'/'f' is ambiguous)
+    has_c = bool(re.search(r"celsius|centigrade", p))
+    has_f = bool(re.search(r"fahrenheit", p))
+    if has_c and has_f:
+        to_f = bool(re.search(r"(?:to|into|in)\s+(?:degrees?\s+)?fahrenheit", p))
+        to_c = bool(re.search(r"(?:to|into|in)\s+(?:degrees?\s+)?(?:celsius|centigrade)", p))
+        num_c = bool(re.search(r"-?\d+(?:\.\d+)?\s*(?:degrees?\s*)?(?:celsius|centigrade)", p))
+        num_f = bool(re.search(r"-?\d+(?:\.\d+)?\s*(?:degrees?\s*)?fahrenheit", p))
+        want_f = (to_f and not to_c) or (num_c and not num_f and not to_c)
+        want_c = (to_c and not to_f) or (num_f and not num_c and not to_f)
+        # INTEGER results only: F->C often yields a repeating decimal
+        # (0F -> -17.7778) whose truncation reads as a wrong/ugly answer to the
+        # judge (red-teamed). A non-integer conversion defers to the model.
+        if want_f and not want_c:
+            v = N * 9.0 / 5.0 + 32.0
+            return _fmt(v) if float(v).is_integer() else None
+        if want_c and not want_f:
+            v = (N - 32.0) * 5.0 / 9.0
+            return _fmt(v) if abs(v - round(v)) < 1e-9 else None
+        return None
+    if has_c or has_f:
+        return None  # only one temperature unit named -> ambiguous, defer
+
+    # factor families (time / length / mass) via the strict connector templates
+    src = tgt = num = None
+    for i, rx in enumerate(_CONV_TEMPLATES):
+        m = rx.search(p)
+        if not m:
+            continue
+        if i == 2:
+            tgt, num, src = m.group(1), m.group(2), m.group(3)
+        else:
+            num, src, tgt = m.group(1), m.group(2), m.group(3)
+        break
+    if src is None:
+        return None
+    (fam_s, f_s), (fam_t, f_t) = _UNIT_FACTOR[src], _UNIT_FACTOR[tgt]
+    if fam_s != fam_t or f_s == f_t:
+        return None  # cross-family or same unit -> not a real conversion, defer
+    val = Fraction(num) * Fraction(f_s, f_t)
+    if fam_s == "t" and val.denominator != 1:
+        return None  # time: integer containment only
+    return _fmt(float(val))
+
+
+_WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+_WD_INDEX = {d: i for i, d in enumerate(_WEEKDAYS)}
+_WD_ALT = "|".join(_WEEKDAYS)
+
+
+def solve_day_of_week(prompt: str) -> str | None:
+    """Day-of-week modular arithmetic from an EXPLICIT weekday anchor plus an
+    offset asked in the question. Anchors: 'today is <wd>', 'yesterday was <wd>',
+    'tomorrow is <wd>'. All anchors must agree on today's weekday (conflicting or
+    absent -> defer; a negated 'today is NOT Monday' never matches, as 'not' is no
+    weekday). The question tail after 'what/which day' gives the offset (today /
+    tomorrow / yesterday / in N days / N days ago); anything else defers."""
+    p = prompt.lower()
+    if "day" not in p:
+        return None
+    todays = set()
+    for m in re.finditer(r"\btoday\s+is\s+(" + _WD_ALT + r")\b", p):
+        todays.add(_WD_INDEX[m.group(1)])
+    # negative lookbehinds reject COMPOUND anchors ("the day AFTER tomorrow is
+    # Wednesday", "the day BEFORE yesterday was Friday") — the bare regex matched
+    # the inner "tomorrow is Wednesday" and mis-anchored by one day (red-teamed:
+    # said Tuesday, true Monday). Unsupported compound anchors now defer safely.
+    for m in re.finditer(r"(?<!before )\byesterday\s+(?:was|is)\s+(" + _WD_ALT + r")\b", p):
+        todays.add((_WD_INDEX[m.group(1)] + 1) % 7)
+    for m in re.finditer(r"(?<!after )\btomorrow\s+(?:is|will be)\s+(" + _WD_ALT + r")\b", p):
+        todays.add((_WD_INDEX[m.group(1)] - 1) % 7)
+    if len(todays) != 1:
+        return None  # no anchor, or conflicting anchors -> defer
+    today = next(iter(todays))
+
+    qm = re.search(r"\b(?:what|which)\s+day\b(.*)$", p, re.S)
+    if not qm:
+        return None
+    tail = qm.group(1)
+    mN = re.search(r"\bin\s+(\d+)\s+days?\b", tail)
+    mA = re.search(r"(\d+)\s+days?\s+(?:ago|before|earlier|prior|previous)", tail)
+    if mN and not mA:
+        offset = int(mN.group(1))
+    elif mA and not mN:
+        offset = -int(mA.group(1))
+    elif "tomorrow" in tail and "yesterday" not in tail:
+        offset = 1
+    elif "yesterday" in tail and "tomorrow" not in tail:
+        offset = -1
+    elif "today" in tail and "tomorrow" not in tail and "yesterday" not in tail:
+        offset = 0
+    else:
+        return None  # ambiguous / unsupported question form -> defer
+    return _WEEKDAYS[(today + offset) % 7].capitalize()
+
+
 def free_solve(category: str, prompt: str) -> str | None:
     """Dispatch to a free solver for the category, or None to use a model."""
     if category == "math":
         return (try_arithmetic(prompt) or solve_math_word(prompt) or solve_math_extra(prompt)
                 or solve_compound_percent(prompt) or solve_unit_rate(prompt)
                 or solve_bat_ball(prompt) or solve_work_rate(prompt)
-                or solve_middle_position(prompt) or solve_score_count(prompt))
+                or solve_middle_position(prompt) or solve_score_count(prompt)
+                or solve_sequence(prompt) or solve_unit_conversion(prompt))
     if category == "logic":
         return (solve_ordering(prompt) or solve_syllogism(prompt)
                 or solve_syllogism_validity(prompt) or solve_score_count(prompt)
                 or solve_letter_ranking(prompt) or solve_middle_position(prompt)
-                or solve_row_middle(prompt))
+                or solve_row_middle(prompt) or solve_day_of_week(prompt))
     return None
