@@ -46,15 +46,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
 # original file, so ZERO accuracy change. 8 * 410684460 == 3285475680 (exact file size).
 ARG HF_GGUF_REPO=yashasvithakur/tokenopt-3b-gguf
 ENV MURL=https://huggingface.co/${HF_GGUF_REPO}/resolve/main/tokenopt-3b-q8_0.gguf
-RUN mkdir -p /models
-RUN python -c "import urllib.request as u,os;c=410684460;i=0;r=u.Request(os.environ['MURL'],headers={'Range':'bytes=%d-%d'%(i*c,(i+1)*c-1),'User-Agent':'curl/8'});d=u.urlopen(r,timeout=900).read();assert len(d)==c;open('/models/mp_%d'%i,'wb').write(d)"
-RUN python -c "import urllib.request as u,os;c=410684460;i=1;r=u.Request(os.environ['MURL'],headers={'Range':'bytes=%d-%d'%(i*c,(i+1)*c-1),'User-Agent':'curl/8'});d=u.urlopen(r,timeout=900).read();assert len(d)==c;open('/models/mp_%d'%i,'wb').write(d)"
-RUN python -c "import urllib.request as u,os;c=410684460;i=2;r=u.Request(os.environ['MURL'],headers={'Range':'bytes=%d-%d'%(i*c,(i+1)*c-1),'User-Agent':'curl/8'});d=u.urlopen(r,timeout=900).read();assert len(d)==c;open('/models/mp_%d'%i,'wb').write(d)"
-RUN python -c "import urllib.request as u,os;c=410684460;i=3;r=u.Request(os.environ['MURL'],headers={'Range':'bytes=%d-%d'%(i*c,(i+1)*c-1),'User-Agent':'curl/8'});d=u.urlopen(r,timeout=900).read();assert len(d)==c;open('/models/mp_%d'%i,'wb').write(d)"
-RUN python -c "import urllib.request as u,os;c=410684460;i=4;r=u.Request(os.environ['MURL'],headers={'Range':'bytes=%d-%d'%(i*c,(i+1)*c-1),'User-Agent':'curl/8'});d=u.urlopen(r,timeout=900).read();assert len(d)==c;open('/models/mp_%d'%i,'wb').write(d)"
-RUN python -c "import urllib.request as u,os;c=410684460;i=5;r=u.Request(os.environ['MURL'],headers={'Range':'bytes=%d-%d'%(i*c,(i+1)*c-1),'User-Agent':'curl/8'});d=u.urlopen(r,timeout=900).read();assert len(d)==c;open('/models/mp_%d'%i,'wb').write(d)"
-RUN python -c "import urllib.request as u,os;c=410684460;i=6;r=u.Request(os.environ['MURL'],headers={'Range':'bytes=%d-%d'%(i*c,(i+1)*c-1),'User-Agent':'curl/8'});d=u.urlopen(r,timeout=900).read();assert len(d)==c;open('/models/mp_%d'%i,'wb').write(d)"
-RUN python -c "import urllib.request as u,os;c=410684460;i=7;r=u.Request(os.environ['MURL'],headers={'Range':'bytes=%d-%d'%(i*c,(i+1)*c-1),'User-Agent':'curl/8'});d=u.urlopen(r,timeout=900).read();assert len(d)==c;open('/models/mp_%d'%i,'wb').write(d)"
+RUN mkdir -p /models \
+ && printf '%s\n' \
+    'import sys, time, os, urllib.request as u' \
+    'c = 410684460; i = int(sys.argv[1])' \
+    'for attempt in range(5):' \
+    '    try:' \
+    '        r = u.Request(os.environ["MURL"], headers={"Range": "bytes=%d-%d" % (i*c, (i+1)*c-1), "User-Agent": "curl/8"})' \
+    '        d = u.urlopen(r, timeout=900).read()' \
+    '        assert len(d) == c, "short read %d" % len(d)' \
+    '        open("/models/mp_%d" % i, "wb").write(d)' \
+    '        break' \
+    '    except Exception as e:' \
+    '        print("chunk", i, "attempt", attempt, "failed:", e, flush=True)' \
+    '        if attempt == 4: raise' \
+    '        time.sleep(10 * (attempt + 1))' \
+    > /dl.py
+RUN python /dl.py 0
+RUN python /dl.py 1
+RUN python /dl.py 2
+RUN python /dl.py 3
+RUN python /dl.py 4
+RUN python /dl.py 5
+RUN python /dl.py 6
+RUN python /dl.py 7
 
 COPY agent/requirements.txt ./agent/requirements.txt
 RUN pip install --no-cache-dir -r agent/requirements.txt
