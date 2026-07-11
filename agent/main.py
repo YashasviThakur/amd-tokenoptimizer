@@ -14,8 +14,9 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 from .backends import (LocalModel, Model, RemoteMeter, lowercase_ner, normalize_answer,
                        strip_code_fence)
+from .classifier import classify
 from .config import config
-from .router import route
+from .router import batch_remote, route
 
 _PROMPT_KEYS = ("prompt", "question", "input", "text", "query", "task")
 
@@ -151,6 +152,47 @@ def _resolve_models(remote) -> None:
           f"verified={config.models_verified}", file=sys.stderr)
 
 
+def _postprocess_answer(category, ans: str) -> str:
+    """Apply the grader-matching output cleanup used for every answer (batched or not)."""
+    if category in ("code_debug", "code_gen"):
+        return strip_code_fence(ans)  # raw code — ``` fences fail an exec/match judge
+    ans = normalize_answer(ans)  # typographic unicode breaks string-match judges
+    if ans.startswith("```"):
+        ans = strip_code_fence(ans)  # misclassified code task -> still strip fences
+    if category == "ner":
+        ans = lowercase_ner(ans)  # match the grader's lowercase entity strings
+    return ans
+
+
+def _batch_prepass(tasks, remote, results, meta, t0) -> set:
+    """Answer always-remote short-answer tasks in grouped Fireworks calls (amortizing
+    the per-call template). Returns the set of task indices it RESOLVED; every other
+    task — including any the batch couldn't cleanly answer — is left for normal routing.
+    Purely additive and fallback-safe: it can lower tokens but never drop a task."""
+    from collections import defaultdict
+    groups: dict = defaultdict(list)
+    for i, t in enumerate(tasks):
+        try:
+            cat = classify(t.get("prompt", ""))
+        except Exception:
+            continue
+        if cat in config.batch_categories:      # always-remote short cats only
+            groups[cat].append((i, t.get("prompt", "")))
+    resolved: set = set()
+    deadline = t0 + config.run_deadline_s
+    for cat, items in groups.items():
+        for k in range(0, len(items), config.batch_max_group):  # cap group size
+            chunk = items[k:k + config.batch_max_group]
+            got = batch_remote(cat, chunk, remote, deadline=deadline)
+            for idx, raw in got.items():
+                results[idx] = {"task_id": str(tasks[idx].get("task_id")),
+                                "answer": _postprocess_answer(cat, raw)}
+                meta[idx] = {"task_id": tasks[idx].get("task_id"), "route": "batch",
+                             "category": cat, "tokens": 0}
+                resolved.add(idx)
+    return resolved
+
+
 def run() -> dict:
     t0 = time.time()
     _diagnose_env()
@@ -193,9 +235,21 @@ def run() -> dict:
             return {"task_id": task.get("task_id"), "answer": "", "route": "error",
                     "category": "?", "tokens": 0, "error": str(e)}
 
+    # Optional batch pre-pass: resolve grouped always-remote tasks in fewer calls.
+    resolved: set = set()
+    if config.enable_batching and config.has_remote():
+        try:
+            resolved = _batch_prepass(tasks, remote, results, meta, t0)
+            if resolved:
+                routes["batch"] = len(resolved)
+                _write_json(config.output_path, results)  # persist early wins
+        except Exception as e:
+            print(f"[agent] batch pre-pass skipped: {e}", file=sys.stderr)
+            resolved = set()
+
     done_count = 0
     with ThreadPoolExecutor(max_workers=max(1, config.max_workers)) as ex:
-        fut_to_idx = {ex.submit(_work, task): i for i, task in enumerate(tasks)}
+        fut_to_idx = {ex.submit(_work, task): i for i, task in enumerate(tasks) if i not in resolved}
         pending = set(fut_to_idx)
         while pending:
             remaining = hard_deadline - (time.time() - t0)
@@ -216,17 +270,7 @@ def run() -> dict:
                 if r.get("error"):
                     print(f"[agent] task {r.get('task_id')} ({r.get('category')}) failed: {r['error']}",
                           file=sys.stderr)
-                ans = _answer_str(r.get("answer"))
-                if r.get("category") in ("code_debug", "code_gen"):
-                    ans = strip_code_fence(ans)  # raw code — the grader execs/matches it, ``` fences fail
-                else:
-                    ans = normalize_answer(ans)  # typographic unicode breaks string-match judges
-                    if ans.startswith("```"):
-                        # misclassified code task ("Write a program..." routed factual):
-                        # the answer is still code — fences must go regardless of category
-                        ans = strip_code_fence(ans)
-                    if r.get("category") == "ner":
-                        ans = lowercase_ner(ans)  # match the grader's lowercase entity strings
+                ans = _postprocess_answer(r.get("category"), _answer_str(r.get("answer")))
                 results[i] = {"task_id": str(r.get("task_id")), "answer": ans}
                 meta[i] = {"task_id": r.get("task_id"), "route": r.get("route"),
                            "category": r.get("category"), "confidence": r.get("confidence"),

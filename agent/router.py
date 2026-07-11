@@ -22,8 +22,8 @@ from . import verifiers as V
 from .backends import extract_final
 from .classifier import classify
 from .config import config
-from .prompts import (_NO_REASONING_FAMILIES, build_messages, build_remote_messages,
-                      build_retry_messages, max_tokens_for)
+from .prompts import (_NO_REASONING_FAMILIES, build_batch_messages, build_messages,
+                      build_remote_messages, build_retry_messages, max_tokens_for)
 from .solvers import free_solve
 
 # Categories the local model may answer for 0 tokens. sentiment + summarization are
@@ -378,6 +378,57 @@ def _enforce_word_limit(remote, model, prompt, ans, time_left) -> str:
         if abs(cw - n) < abs(wc - n):
             return cand
     return ans
+
+
+_BATCH_LINE = re.compile(r"^\s*(\d{1,2})\s*[\).:\]]\s*(.+?)\s*$")
+
+
+def batch_remote(category: str, items: "list[tuple[int, str]]", remote, *,
+                 deadline: float | None = None) -> dict:
+    """Answer several same-category tasks in ONE Fireworks call ('N) answer' per line),
+    amortizing the fixed per-call template. `items` = [(orig_index, prompt), ...].
+
+    Returns {orig_index: raw_answer} ONLY when EVERY item parsed to a non-empty answer;
+    on ANY doubt (single item, no model, error, truncation, missing/blank line, wrong
+    count) returns {} so the caller routes those tasks individually. => batching can
+    lower tokens but can NEVER drop or corrupt a task (the per-task path is the net)."""
+    if len(items) < 2:
+        return {}
+    prompts = [p for _, p in items]
+    model = next((m for m in _candidate_models(category) if m), None)
+    if not model:
+        return {}
+    msgs = build_batch_messages(category, prompts)
+    # N answers need N-fold room, but keep the reasoning trace bounded.
+    max_tok = min(max(max_tokens_for(category), config.max_tokens_floor) + 80 * len(items), 3072)
+    t_off = "minimax" in model.lower() and (config.thinking_off_all or config.thinking_off_soft)
+    rem = (deadline - _time.time()) if deadline is not None else None
+    if rem is not None and rem <= 5.0:
+        return {}
+    try:
+        out = remote.chat(model, msgs, max_tokens=max_tok, temperature=0.0, n=1,
+                          reasoning_effort=config.reasoning_effort,
+                          timeout=min(rem, config.request_timeout) if rem else None,
+                          thinking_off=t_off)
+    except Exception:
+        return {}
+    if not out or out[0].get("finish") == "length":  # truncated batch = unreliable
+        return {}
+    text = (out[0].get("text") or "").strip()
+    if not text:
+        return {}
+    parsed: dict = {}
+    for line in text.splitlines():
+        m = _BATCH_LINE.match(line)
+        if not m:
+            continue
+        n = int(m.group(1))
+        if 1 <= n <= len(items) and (n - 1) not in parsed:
+            parsed[n - 1] = m.group(2).strip()
+    # ALL items must have a non-empty answer, else fall back for the WHOLE group.
+    if len(parsed) != len(items) or not all(parsed.get(j, "").strip() for j in range(len(items))):
+        return {}
+    return {items[j][0]: parsed[j] for j in range(len(items))}
 
 
 def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0,

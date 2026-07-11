@@ -138,6 +138,16 @@ class Config:
     local_only: bool = os.getenv("LOCAL_ONLY", "0").strip().lower() in ("1", "true", "yes")
     # Keep a local answer when confidence >= this; else escalate to Fireworks.
     escalate_threshold: float = float(os.getenv("ESCALATE_THRESHOLD", "0.60"))
+    # Remote-call BATCHING: pack same-category always-remote short-answer tasks into ONE
+    # Fireworks call to amortize the ~104-token minimax chat-template scaffold (~52% of
+    # the bill). Accuracy-neutral: a malformed/short batch reply falls back to per-task
+    # routing (correct answers), so batching can save tokens but never drop a task. OFF
+    # by default -> ships as a separate grader probe (minimax batch behaviour can't be
+    # measured on the personal key). batch_categories = always-remote short cats only.
+    enable_batching: bool = os.getenv("ENABLE_BATCHING", "0").strip().lower() in ("1", "true", "yes")
+    batch_categories: tuple = tuple(
+        c.strip() for c in os.getenv("BATCH_CATEGORIES", "factual,ner").split(",") if c.strip())
+    batch_max_group: int = int(os.getenv("BATCH_MAX_GROUP", "6"))
     # httpx read timeout. 26s (was 14): a reasoning model's trace can legitimately
     # take >14s, and the OLD value timed those calls out -> empty answer -> wrong.
     # Read timeouts are no longer retried, so a single 26s call stays under the
