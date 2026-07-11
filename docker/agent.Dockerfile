@@ -133,10 +133,12 @@ ENV INPUT_PATH=/input/tasks.json \
     ENABLE_BATCHING=1 \
     BATCH_CATEGORIES=factual \
     LOCAL_CODE_MAX_TOKENS=96 \
-    LOCAL_TIME_BUDGET_S=300
+    LOCAL_TIME_BUDGET_S=300 \
+    LOCAL_LOAD_CUTOFF_S=150
 
-# Reassemble the 8 chunked model layers into the single GGUF once at startup (byte-
-# identical concat), then run the agent. Idempotent: skips if already assembled.
-RUN printf '#!/bin/sh\nset -e\nM=/models/tokenopt-3b-q8_0.gguf\n[ -s "$M" ] || cat /models/mp_0 /models/mp_1 /models/mp_2 /models/mp_3 /models/mp_4 /models/mp_5 /models/mp_6 /models/mp_7 > "$M"\nexec python -m agent.main "$@"\n' > /app/start.sh \
- && chmod +x /app/start.sh
-ENTRYPOINT ["/bin/sh", "/app/start.sh"]
+# Direct entrypoint — the agent process is READY in seconds. Model reassembly (the
+# 8 chunk layers -> one GGUF) + load happen in a BACKGROUND thread inside the agent
+# (main.LazyLocal) behind LOCAL_LOAD_CUTOFF_S: the blocking start.sh reassembly ran
+# BEFORE the agent and TIMEOUT'd the whole run on an overloaded grader box; now a
+# slow box degrades to a scored all-remote run instead of an unranked TIMEOUT.
+ENTRYPOINT ["python", "-m", "agent.main"]

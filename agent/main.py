@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
@@ -77,6 +78,78 @@ def _write_json(path: str, obj) -> None:
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, default=str)
     os.replace(tmp, path)
+
+
+def _reassemble_model() -> None:
+    """Reassemble the 8 chunked model layers (/models/mp_0..mp_7) into the single
+    GGUF at config.local_model_path — byte-identical concat, idempotent, streamed
+    in 64MB blocks so it never doubles RAM. Runs in the LazyLocal loader thread so
+    the agent process is READY instantly; on a dev box with a whole model file (or
+    no chunks at all) this is a no-op."""
+    path = config.local_model_path
+    try:
+        if os.path.exists(path) and os.path.getsize(path) > 0:
+            return  # already whole
+        d = os.path.dirname(path) or "."
+        parts = [os.path.join(d, f"mp_{i}") for i in range(8)]
+        if not all(os.path.exists(p) for p in parts):
+            return  # no chunks (dev box) — let the loader fail cleanly if no model
+        tmp = path + ".tmp"
+        with open(tmp, "wb") as out:
+            for p in parts:
+                with open(p, "rb") as f:
+                    while True:
+                        block = f.read(64 * 1024 * 1024)
+                        if not block:
+                            break
+                        out.write(block)
+        os.replace(tmp, path)
+        print("[agent] model reassembled from 8 chunks", file=sys.stderr)
+    except Exception as e:
+        print(f"[agent] model reassembly failed: {e}", file=sys.stderr)
+
+
+class LazyLocal:
+    """Non-blocking local-model holder: the agent process becomes READY instantly
+    while model reassembly + load run in a daemon thread. The ship-16 grader run
+    TIMEOUT'd during container START (reassembly+load ran BEFORE the agent on an
+    overloaded box); this inverts the order. Healthy box: ready in ~30s, the first
+    local tasks wait briefly -> full hybrid, identical behavior. Dying box: the
+    readiness cutoff passes -> every local-eligible task escalates remote -> a
+    SCORED all-remote run instead of an unranked TIMEOUT. Strictly dominant."""
+
+    def __init__(self, cutoff_s: float):
+        self._model = None
+        self._failed = False
+        self._t0 = time.time()
+        self._cutoff = cutoff_s
+        self._ready = threading.Event()
+        threading.Thread(target=self._load, daemon=True).start()
+
+    def _load(self):
+        try:
+            _reassemble_model()
+            self._model = _build_local()
+        except Exception as e:
+            print(f"[agent] lazy local load failed: {e}", file=sys.stderr)
+        finally:
+            if self._model is None:
+                self._failed = True
+            self._ready.set()
+
+    def __bool__(self):
+        # truthy while a model is still possible (loading or loaded); False only
+        # after a failed load / expired cutoff, so the router stops trying local.
+        return not self._failed
+
+    def chat(self, *a, **kw):
+        remaining = self._cutoff - (time.time() - self._t0)
+        if not self._ready.wait(timeout=max(0.0, remaining)):
+            self._failed = True  # cutoff expired -> degrade to remote for the rest
+            raise RuntimeError(f"local model not ready within {self._cutoff:.0f}s")
+        if self._model is None:
+            raise RuntimeError("local model unavailable")
+        return self._model.chat(*a, **kw)
 
 
 def _build_local():
@@ -204,7 +277,11 @@ def run() -> dict:
     remote = Model(config.fireworks_base_url, config.fireworks_api_key, config.request_timeout, meter=meter)
     if config.has_remote():
         _resolve_models(remote)
-    local = _build_local()
+    # LAZY local load: the process is ready instantly; reassembly+load happen in a
+    # background thread with a readiness cutoff (the ship-16 TIMEOUT died in the
+    # blocking pre-agent reassembly on an overloaded grader box). use_local off ->
+    # plain None, identical to before.
+    local = LazyLocal(config.local_load_cutoff_s) if config.use_local else None
 
     try:
         with open(config.input_path, encoding="utf-8") as f:
@@ -227,6 +304,12 @@ def run() -> dict:
     # (deadline / crash) still appears in a well-formed results.json.
     results = [{"task_id": str(t.get("task_id")), "answer": ""} for t in tasks]
     meta = [{"task_id": t.get("task_id"), "route": "deadline-skip", "tokens": 0} for t in tasks]
+    try:
+        # write the valid pre-seed IMMEDIATELY: even a SIGKILL seconds from now
+        # leaves a well-formed results.json with every task_id present.
+        _write_json(config.output_path, results)
+    except Exception:
+        pass
     hard_deadline = config.run_deadline_s + 60.0
 
     def _work(task):

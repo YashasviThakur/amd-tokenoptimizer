@@ -129,6 +129,12 @@ class Config:
     # truncates a long one so it won't compile -> the differential oracle escalates
     # it to Fireworks. Only bounds the code path; other categories keep their ceiling.
     local_code_max_tokens: int = int(os.getenv("LOCAL_CODE_MAX_TOKENS", "160"))
+    # Readiness cutoff for the LAZY model load (reassembly + llama load in a
+    # background thread). Healthy box: ready in ~30s, full hybrid. Overloaded box:
+    # cutoff expires -> local-eligible tasks escalate remote -> a SCORED all-remote
+    # run instead of an unranked TIMEOUT (which is how the blocking pre-agent
+    # reassembly died on the grader).
+    local_load_cutoff_s: float = float(os.getenv("LOCAL_LOAD_CUTOFF_S", "150"))
     # HARD ceiling on CUMULATIVE local-model generation wall-time for the whole run.
     # The local model is single-locked and the grader has 2 vCPUs, so local work is
     # serialized — an unbounded local queue is exactly how a run TIMEOUTs. Once the
