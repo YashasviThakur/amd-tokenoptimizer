@@ -123,6 +123,12 @@ class Config:
     # Prompts longer than this skip the local model (slow CPU prefill on 2 vCPU
     # risks the <30s/task limit) and escalate to Fireworks instead.
     local_max_prompt_chars: int = int(os.getenv("LOCAL_MAX_PROMPT_CHARS", "2000"))
+    # Ceiling on LOCAL code drafts (code_gen/code_debug) at n=2. Measured on a 2-vCPU
+    # box: short functions finish in ~5s but a ~150-token one takes ~31s (> the 30s/
+    # task target). Capping the draft keeps SHORT functions local (fast, free) and
+    # truncates a long one so it won't compile -> the differential oracle escalates
+    # it to Fireworks. Only bounds the code path; other categories keep their ceiling.
+    local_code_max_tokens: int = int(os.getenv("LOCAL_CODE_MAX_TOKENS", "160"))
 
     # ZERO-TOKEN mode: never call Fireworks — solvers + the bundled local model
     # answer everything. 0 tokens is the unbeatable floor of an ascending-token

@@ -423,6 +423,139 @@ def _extract_io_pairs(prompt: str, name: str):
     return pairs
 
 
+def _arity(src: str, name: str) -> int:
+    """Number of positional params of `name` in `src` (-1 if not found). *args / **kwargs
+    and self are ignored; a param with a default still counts (we always pass it)."""
+    m = re.search(r"def\s+" + re.escape(name) + r"\s*\(([^)]*)\)", src)
+    if not m:
+        return -1
+    params = [p.strip() for p in m.group(1).split(",") if p.strip()]
+    params = [p for p in params if not p.startswith("*") and p != "self"]
+    return len(params)
+
+
+# Diverse, type-probing input batteries. A function raises on the wrong type (that
+# input is skipped) and runs on its own type, so the battery self-selects — no need
+# to infer the parameter type. Kept small: two 2s subprocesses is the whole budget.
+# Adversarial on purpose: mixed-case + palindromic + upper/lower-vowel strings exercise
+# the common bug classes (case-insensitivity, reversal, membership) so a subtly-wrong
+# draw DIVERGES from a correct one instead of accidentally agreeing on bland inputs.
+_DIFF_INPUTS_1 = [[""], ["a"], ["ab"], ["abc"], ["racecar"], ["Racecar"], ["Anna"],
+                  ["Madam"], ["Hello World"], ["aeiou"], ["AEIOU"], ["Hello"], ["12321"],
+                  [0], [1], [2], [5], [10], [-3], [100],
+                  [[1, 2, 3]], [[]], [[3, 1, 2]], [[5, 5, 5]], [[2, 2, 1, 3, 3]]]
+_DIFF_INPUTS_2 = [[5, 3], [0, 0], [10, 2], [7, 7], [3, 5],
+                  ["abc", "b"], [[1, 2, 3], 2], [[1, 2], [3, 4]]]
+
+
+def _run_battery(src: str, name: str, inputs) -> "list | None":
+    """Run `name` from `src` against every input tuple in a locked-down subprocess.
+    Returns a list of ['ok', repr(result)] | ['err', ExcType] aligned to `inputs`,
+    or None on any failure (compile error, timeout, crash) -> caller escalates."""
+    tmpfile = None
+    try:
+        harness = (
+            src + "\n\nimport json as _json\n_INPUTS = " + json.dumps(inputs) + "\n"
+            "_out = []\n"
+            "for _a in _INPUTS:\n"
+            "    try:\n"
+            "        _r = " + name + "(*_a)\n"
+            "        _out.append(['ok', repr(_r)])\n"
+            "    except Exception as _e:\n"
+            "        _out.append(['err', type(_e).__name__])\n"
+            "print(_json.dumps(_out))\n"
+        )
+        tmpdir = tempfile.gettempdir()
+        fd, tmpfile = tempfile.mkstemp(suffix=".py", dir=tmpdir)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(harness)
+        kwargs = dict(timeout=2, capture_output=True, cwd=tmpdir,
+                      stdin=subprocess.DEVNULL, text=True)
+        preexec = _rlimit_preexec()
+        if preexec is not None:
+            kwargs["preexec_fn"] = preexec
+        proc = subprocess.run([sys.executable, tmpfile], **kwargs)
+        if proc.returncode != 0:
+            return None
+        return json.loads(proc.stdout.strip())
+    except Exception:
+        return None
+    finally:
+        if tmpfile:
+            try:
+                os.remove(tmpfile)
+            except Exception:
+                pass
+
+
+def _rtype(r: str) -> str:
+    """Coarse python-type class of a repr string, so outputs of different types
+    (a list vs a string on an off-type input) aren't compared as if equal/unequal."""
+    if not r:
+        return "x"
+    if r in ("True", "False"):
+        return "bool"
+    if r == "None":
+        return "none"
+    c = r[0]
+    if c in "'\"":
+        return "str"
+    if c == "[":
+        return "list"
+    if c == "(":
+        return "tuple"
+    if c == "{":
+        return "dict"
+    if c == "-" or c.isdigit():
+        return "num"
+    return "other"
+
+
+def differential_code_ok(prompt: str, draws: "list[str]", min_agree: int = 3) -> bool:
+    """Correctness oracle for code with NO embedded I/O examples (code_gen/code_debug).
+
+    Two INDEPENDENT local draws of the function are each executed against a diverse
+    auto-generated input battery; keep local ONLY when both compile AND agree on the
+    exact output for >= `min_agree` inputs with ZERO disagreements. Two independently
+    sampled implementations agreeing on many diverse inputs is strong evidence of
+    correctness; any behavioural divergence (or one crashing where the other runs)
+    -> escalate. Never raises; any uncertainty -> False (escalate)."""
+    srcs = []
+    for d in draws:
+        s = strip_code(d)
+        if s and code_compiles(s):
+            srcs.append(s)
+        if len(srcs) == 2:
+            break
+    if len(srcs) < 2:
+        return False
+    name = _func_name(prompt, srcs[0]) or (
+        (re.search(r"def\s+([A-Za-z_]\w*)", srcs[0]) or [None, None])[1])
+    if not name:
+        return False
+    ar = _arity(srcs[0], name)
+    inputs = _DIFF_INPUTS_1 if ar == 1 else _DIFF_INPUTS_2 if ar == 2 else None
+    if inputs is None:
+        return False
+    a = _run_battery(srcs[0], name, inputs)
+    b = _run_battery(srcs[1], name, inputs)
+    if a is None or b is None or len(a) != len(b):
+        return False
+    agree = 0
+    for ra, rb in zip(a, b):
+        if ra[0] == "ok" and rb[0] == "ok" and _rtype(ra[1]) == _rtype(rb[1]):
+            if ra[1] == rb[1]:
+                agree += 1
+            else:
+                return False  # same-type outputs on an in-type input, disagreed -> escalate
+        # otherwise (one/both raised, or the two outputs are DIFFERENT types): an
+        # off-type input one impl tolerates and the other rejects or coerces
+        # differently (undefined by the spec) -> skip. A REAL value-bug returns the
+        # right type with a wrong value -> caught above; a type-bug never agrees ->
+        # too-few agreements -> escalate below.
+    return agree >= min_agree
+
+
 def _rlimit_preexec():
     """A preexec_fn that caps the child's CPU seconds and address space, so a runaway
     (infinite loop / huge allocation) is killed by the OS. Returns None where the

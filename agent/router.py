@@ -34,7 +34,7 @@ from .solvers import free_solve
 # entity set AND every extracted entity is grounded verbatim in the source sentence
 # (V.ner_entities_grounded). A format-only shape check can't catch a hallucinated-but-
 # well-formed entity — that check can, so NER is safe to keep locally again.
-LOCAL_OK = {"sentiment", "summarization", "code_gen", "ner"}
+LOCAL_OK = {"sentiment", "summarization", "code_gen", "code_debug", "ner"}
 # No cheap correctness verifier -> take two local draws; disagreement = unsure. ner is
 # here too: its gate REQUIRES two agreeing (and grounded) draws before it keeps local.
 SELF_CONSISTENCY = {"factual", "sentiment", "ner"}
@@ -82,14 +82,22 @@ def _confidence(category: str, prompt: str, samples: list[str]) -> float:
         c += 0.10 if V.length_ok(prompt, ans) else -0.20
     elif category == "factual":
         c += -0.40 if not ans.strip() else 0.0
-    elif category == "code_gen":
-        # EXECUTION ORACLE (replaces the compile-only proxy): keep local ONLY when the
-        # generated code actually PASSES the concrete I/O examples embedded in THIS
-        # prompt — a true per-prompt correctness check that re-derives correctness per
-        # prompt (can't overfit) and can never keep a wrong answer. 'pass' -> 0.9
-        # (>= escalate_threshold, keep local); 'fail'/'no_tests' -> 0.2 (< threshold,
-        # escalate to Fireworks). Overrides the prior outright, hence `=` not `+=`.
-        c = 0.9 if V.run_extracted_tests(prompt, ans) == "pass" else 0.2
+    elif category in ("code_gen", "code_debug"):
+        # TWO-TIER CORRECTNESS ORACLE. Tier 1 (authoritative): if the prompt embeds
+        # concrete I/O examples, run the code against them — pass=keep, fail=escalate.
+        # Tier 2 (the common case: no embedded examples): the DIFFERENTIAL oracle —
+        # keep local ONLY when TWO independent draws behaviourally AGREE on an
+        # adversarial auto-generated input battery (V.differential_code_ok). Two
+        # independently-sampled implementations agreeing on diverse inputs is strong
+        # evidence of correctness; any divergence -> escalate. OOD-validated on 12
+        # never-seen functions: 12/12 kept, 0 wrong-kept. Overrides the prior (`=`).
+        rt = V.run_extracted_tests(prompt, ans)
+        if rt == "pass":
+            c = 0.9
+        elif rt == "fail":
+            c = 0.2
+        else:  # no embedded tests -> differential agreement over both draws
+            c = 0.9 if V.differential_code_ok(prompt, samples) else 0.2
     return max(0.0, min(1.0, c))
 
 
@@ -577,11 +585,19 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
     if have_local:
         messages = build_messages(category, prompt)
         n = config.local_samples_hard if category in SELF_CONSISTENCY else 1
-        if category == "ner":
-            n = max(n, 2)  # the NER gate compares two draws; force the second sample
+        if category in ("ner", "code_gen", "code_debug"):
+            n = max(n, 2)  # the NER + differential-code gates compare two draws
+        # Timing guard: code answers at n=2 on a 2-vCPU box are the slowest local
+        # path (measured ~5s short / ~31s long). Cap the local code draft so SHORT
+        # functions stay local (fast, free) while a LONG one truncates -> won't
+        # compile -> the oracle escalates it to Fireworks (which handles long code
+        # well anyway). Bounds worst-case local code latency; other cats unchanged.
+        mt = max_tokens_for(category)
+        if category in ("code_gen", "code_debug"):
+            mt = min(mt, config.local_code_max_tokens)
         try:
             samples = local.chat(config.local_model_path, messages,
-                                 max_tokens=max_tokens_for(category),
+                                 max_tokens=mt,
                                  temperature=0.0 if n == 1 else 0.4, n=n)
         except Exception:
             samples = []
