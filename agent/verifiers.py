@@ -247,16 +247,44 @@ def valid_json(text: str) -> bool:
         return False
 
 
+_NUMWORD = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
+
+
+def _as_int(tok: str) -> int:
+    tok = (tok or "").strip().lower()
+    if tok in _NUMWORD:
+        return _NUMWORD[tok]
+    return int(tok) if tok.isdigit() else 0
+
+
 def length_ok(prompt: str, answer: str) -> bool:
+    """Gate a summarization answer against the prompt's STRICT format requirement (the
+    grader fails wrong counts). A non-match returns False -> the router escalates to a
+    remote model that honors the prompt. Handles: exact bullet count, exact sentence
+    count ('one/single/N sentences'), and word limits."""
     p = (prompt or "").lower()
-    words = len(re.findall(r"\w+", answer or ""))
-    sentences = len(re.findall(r"[.!?]+", answer or "")) or 1
+    a = answer or ""
+    words = len(re.findall(r"\w+", a))
+    if words == 0:
+        return False
+    sentences = len(re.findall(r"[.!?]+", a)) or 1
+    # exact BULLET-POINT count: "N bullet points" / "N bullets"
+    mb = re.search(r"\b(\d+|one|two|three|four|five|six)\s+bullet", p)
+    if mb:
+        n = _as_int(mb.group(1))
+        bullets = len(re.findall(r"(?m)^\s*(?:[-*•‣●]|\d+[.)])\s+", a))
+        return n > 0 and bullets == n
+    # exact SENTENCE count
     if "one sentence" in p or "single sentence" in p:
-        return sentences <= 1 and words > 0
+        return sentences <= 1
+    ms = re.search(r"\b(\d+|two|three|four|five|six)\s+sentence", p)
+    if ms:
+        n = _as_int(ms.group(1))
+        return n > 0 and sentences == n
     m = re.search(r"(\d+)\s*words?", p)
     if m:
         return words <= int(m.group(1)) * 1.3
-    return words > 0
+    return True
 
 
 # ── code_gen execution oracle (SECURITY-SENSITIVE: RUNS model-generated code) ──
