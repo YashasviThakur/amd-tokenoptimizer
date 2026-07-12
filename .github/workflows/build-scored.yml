@@ -1,0 +1,62 @@
+name: build-scored
+
+# Builds the LEAN remote-only scored build (docker/agent-scored.Dockerfile) and
+# pushes it to a DISTINCT tag `tokenoptimizer-agent-v2:scored`. This never touches
+# :latest (the 0-token push image), so both coexist: the autonomous loop runs the
+# 0-token :latest, and the submission can be flipped to :scored as a safety revert
+# to lock in a ranked finish.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: tokenoptimizer-agent
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lowercase owner for GHCR
+        run: echo "OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - name: Build scored image (linux/amd64)
+        run: docker build -f docker/agent-scored.Dockerfile -t scored:test .
+
+      - name: Self-test inside the container (offline, solver + contract)
+        run: docker run --rm --entrypoint python scored:test -m agent.main --selftest
+
+      - name: Offline solver-path smoke
+        run: |
+          mkdir -p in out
+          cp docker/sample_input/tasks.json in/tasks.json
+          docker run --rm -e ALLOWED_MODELS= \
+            -e INPUT_PATH=/input/tasks.json -e OUTPUT_PATH=/output/results.json \
+            -v "$PWD/in:/input" -v "$PWD/out:/output" scored:test
+          python - <<'PY'
+          import json
+          d = json.load(open("out/results.json", encoding="utf-8"))
+          assert isinstance(d, list) and len(d) == 4, d
+          assert all(isinstance(x.get("task_id"), str) and isinstance(x.get("answer"), str) and x["answer"] for x in d), d
+          print("solver answers:", [x["answer"] for x in d])
+          PY
+
+      - name: Image size
+        run: |
+          BYTES=$(docker image inspect scored:test --format '{{.Size}}')
+          echo "image size: $((BYTES/1024/1024)) MB"
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push :scored to both package names
+        run: |
+          docker tag scored:test ghcr.io/${OWNER}/${IMAGE}:scored
+          docker tag scored:test ghcr.io/${OWNER}/${IMAGE}-v2:scored
+          docker push ghcr.io/${OWNER}/${IMAGE}:scored
+          docker push ghcr.io/${OWNER}/${IMAGE}-v2:scored
+          echo "Pushed ghcr.io/${OWNER}/${IMAGE}-v2:scored"
