@@ -172,11 +172,13 @@ _ELAB_SYSTEM = {
 def build_remote_messages(category: str, prompt: str, model: str = "") -> list[dict]:
     lm = (model or "").lower()
     # CoT applies when the model has no usable hidden-reasoning channel: plain
-    # instruct families, OR minimax with thinking disabled (thinking_off_all) —
-    # visible reasoning (~70 tok) replaces the billed-hidden trace (~400 tok);
-    # measured 6/6 correct on math/logic/code at 1/4 the tokens.
+    # instruct families, OR any model with thinking disabled (thinking_off_all;
+    # SHIP 20 dropped the minimax-only gate — the 5,969-token qualified run shows
+    # non-minimax reasoning families billing their full hidden trace) — visible
+    # reasoning (~70 tok) replaces the billed-hidden trace (~400 tok); measured
+    # 6/6 correct on math/logic/code at 1/4 the tokens.
     no_hidden_reasoning = (any(f in lm for f in _NO_REASONING_FAMILIES)
-                           or (_cfg.thinking_off_all and "minimax" in lm))
+                           or _cfg.thinking_off_all)
     if category in ("sentiment", "factual", "logic") and wants_elaboration(prompt):
         system = _ELAB_SYSTEM[category]
     elif category == "math" and (is_multipart(prompt) or wants_elaboration(prompt)):

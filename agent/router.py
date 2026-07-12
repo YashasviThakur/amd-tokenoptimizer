@@ -400,7 +400,9 @@ def batch_remote(category: str, items: "list[tuple[int, str]]", remote, *,
     msgs = build_batch_messages(category, prompts)
     # N answers need N-fold room, but keep the reasoning trace bounded.
     max_tok = min(max(max_tokens_for(category), config.max_tokens_floor) + 80 * len(items), 3072)
-    t_off = "minimax" in model.lower() and (config.thinking_off_all or config.thinking_off_soft)
+    # batch categories are all soft; thinking off for EVERY family (SHIP 20 —
+    # backends strips the field and retries on a 4xx, ignoring gateways no-op)
+    t_off = config.thinking_off_all or config.thinking_off_soft
     rem = (deadline - _time.time()) if deadline is not None else None
     if rem is not None and rem <= 5.0:
         return {}
@@ -485,14 +487,15 @@ def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0
                 # a CoT prompt for math/logic — "final answer only" forbids the
                 # thinking those tasks need on a plain instruct model.
                 msgs = messages if full_prompt else build_remote_messages(category, prompt, model)
-                # thinking OFF for minimax-family models: ALL categories when
-                # thinking_off_all (hard categories get the visible-CoT prompt via
-                # build_remote_messages — measured 6/6 correct at 1/4 the tokens);
-                # else soft categories only (the conservative build-J behavior).
-                t_off = ("minimax" in model.lower()
-                         and (config.thinking_off_all
-                              or (config.thinking_off_soft and category in
-                                  ("sentiment", "factual", "ner", "summarization"))))
+                # thinking OFF for EVERY model family (SHIP 20 — was minimax-only,
+                # which let other reasoning families bill their full hidden trace):
+                # ALL categories when thinking_off_all (hard categories get the
+                # visible-CoT prompt via build_remote_messages, which follows the
+                # same flag — measured 6/6 correct at 1/4 the tokens); else soft
+                # categories only. backends.chat strips the field + retries on 4xx.
+                t_off = (config.thinking_off_all
+                         or (config.thinking_off_soft and category in
+                             ("sentiment", "factual", "ner", "summarization")))
                 out = remote.chat(model, msgs, max_tokens=mt, temperature=0.0, n=1,
                                   reasoning_effort=config.reasoning_effort, timeout=call_timeout,
                                   thinking_off=t_off)

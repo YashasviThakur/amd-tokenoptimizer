@@ -69,7 +69,7 @@ ENV INPUT_PATH=/input/tasks.json \
     USE_LOCAL=0 \
     DISABLE_SOLVERS=0 \
     LOCAL_ONLY=0 \
-    REASONING_EFFORT= \
+    REASONING_EFFORT=low \
     REQUEST_TIMEOUT=25 \
     PER_TASK_BUDGET_S=28 \
     RUN_DEADLINE_S=360 \
@@ -80,7 +80,7 @@ ENV INPUT_PATH=/input/tasks.json \
     THINKING_OFF_SOFT=1 \
     THINKING_OFF_ALL=1 \
     ENABLE_BATCHING=1 \
-    BATCH_CATEGORIES=factual
+    BATCH_CATEGORIES=factual,ner,sentiment
 
 # Direct entrypoint — the agent process is READY in seconds and pre-seeds a valid
 # results.json immediately (SIGKILL-proof); with USE_LOCAL=0 the lazy model loader
