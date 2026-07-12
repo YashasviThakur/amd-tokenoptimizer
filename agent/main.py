@@ -80,33 +80,105 @@ def _write_json(path: str, obj) -> None:
     os.replace(tmp, path)
 
 
+def _download_model(url: str, path: str) -> None:
+    """SHIP 21: fetch the GGUF at CONTAINER RUNTIME instead of baking it into the
+    image — the 3.3GB image died in the grader's pull window five times (TIMEOUT/
+    PULL_ERROR before the container ever ran), so the image stays lean (~pulls in
+    seconds) and the model arrives over the wire INSIDE the run. 8 concurrent
+    byte-range streams (HF supports ranges) saturate the pipe; each range retries
+    twice. Runs in the LazyLocal loader thread: the agent is answering solver
+    tasks while this downloads, and if the sandbox blocks egress / the pipe is
+    slow, the loader cutoff flips every task to the Fireworks path — a scored
+    remote run (the ship-20 behavior), never a dead one."""
+    import urllib.request
+
+    req = urllib.request.Request(url, headers={"Range": "bytes=0-0", "User-Agent": "curl/8"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        rng = r.headers.get("Content-Range", "")
+    total = int(rng.rsplit("/", 1)[-1]) if "/" in rng else 0
+    if total <= 0:
+        raise RuntimeError(f"no ranged size from {url[:60]} (Content-Range={rng!r})")
+    n = 8
+    chunk = (total + n - 1) // n
+    d = os.path.dirname(path) or "."
+    os.makedirs(d, exist_ok=True)
+
+    def _fetch(i: int) -> None:
+        lo, hi = i * chunk, min((i + 1) * chunk, total) - 1
+        for attempt in range(3):
+            try:
+                rq = urllib.request.Request(
+                    url, headers={"Range": f"bytes={lo}-{hi}", "User-Agent": "curl/8"})
+                with urllib.request.urlopen(rq, timeout=600) as r, \
+                        open(os.path.join(d, f"dl_{i}"), "wb") as out:
+                    while True:
+                        block = r.read(16 * 1024 * 1024)
+                        if not block:
+                            break
+                        out.write(block)
+                if os.path.getsize(os.path.join(d, f"dl_{i}")) == hi - lo + 1:
+                    return
+                raise RuntimeError("short range read")
+            except Exception as e:
+                if attempt == 2:
+                    raise
+                print(f"[agent] model range {i} attempt {attempt} failed: {e}", file=sys.stderr)
+                time.sleep(3 * (attempt + 1))
+
+    threads = [threading.Thread(target=_fetch, args=(i,), daemon=True) for i in range(n)]
+    t0 = time.time()
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    parts = [os.path.join(d, f"dl_{i}") for i in range(n)]
+    if not all(os.path.exists(p) for p in parts):
+        raise RuntimeError("model download incomplete")
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as out:
+        for p in parts:
+            with open(p, "rb") as f:
+                while True:
+                    block = f.read(64 * 1024 * 1024)
+                    if not block:
+                        break
+                    out.write(block)
+            os.remove(p)
+    os.replace(tmp, path)
+    print(f"[agent] model downloaded: {total} bytes in {time.time() - t0:.0f}s", file=sys.stderr)
+
+
 def _reassemble_model() -> None:
-    """Reassemble the 8 chunked model layers (/models/mp_0..mp_7) into the single
-    GGUF at config.local_model_path — byte-identical concat, idempotent, streamed
-    in 64MB blocks so it never doubles RAM. Runs in the LazyLocal loader thread so
-    the agent process is READY instantly; on a dev box with a whole model file (or
-    no chunks at all) this is a no-op."""
+    """Make the GGUF at config.local_model_path exist: (a) already whole -> no-op;
+    (b) 8 baked chunk layers (/models/mp_0..mp_7, the old image layout) -> concat;
+    (c) MODEL_URL set -> runtime download (SHIP 21, see _download_model);
+    (d) none of the above -> return and let the loader fail cleanly (remote path).
+    Streamed in 64MB blocks so it never doubles RAM. Runs in the LazyLocal loader
+    thread so the agent process is READY instantly."""
     path = config.local_model_path
     try:
         if os.path.exists(path) and os.path.getsize(path) > 0:
             return  # already whole
         d = os.path.dirname(path) or "."
         parts = [os.path.join(d, f"mp_{i}") for i in range(8)]
-        if not all(os.path.exists(p) for p in parts):
-            return  # no chunks (dev box) — let the loader fail cleanly if no model
-        tmp = path + ".tmp"
-        with open(tmp, "wb") as out:
-            for p in parts:
-                with open(p, "rb") as f:
-                    while True:
-                        block = f.read(64 * 1024 * 1024)
-                        if not block:
-                            break
-                        out.write(block)
-        os.replace(tmp, path)
-        print("[agent] model reassembled from 8 chunks", file=sys.stderr)
+        if all(os.path.exists(p) for p in parts):
+            tmp = path + ".tmp"
+            with open(tmp, "wb") as out:
+                for p in parts:
+                    with open(p, "rb") as f:
+                        while True:
+                            block = f.read(64 * 1024 * 1024)
+                            if not block:
+                                break
+                            out.write(block)
+            os.replace(tmp, path)
+            print("[agent] model reassembled from 8 chunks", file=sys.stderr)
+            return
+        url = os.getenv("MODEL_URL", "").strip()
+        if url:
+            _download_model(url, path)
     except Exception as e:
-        print(f"[agent] model reassembly failed: {e}", file=sys.stderr)
+        print(f"[agent] model obtain failed: {e}", file=sys.stderr)
 
 
 class LazyLocal:

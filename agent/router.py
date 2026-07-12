@@ -723,13 +723,18 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
 
         # 4) escalate low-confidence local answer to Fireworks — but pass the local
         # answer as a fallback so a dead-remote grader can't turn a usable local
-        # answer into an empty (0-credit) one. Skipped entirely in LOCAL_ONLY mode.
-        if remote_ok:
+        # answer into an empty (0-credit) one. RE-EVALUATED here (not the stale
+        # remote_ok): in LOCAL_ONLY a task can enter this block while the lazy
+        # loader is alive and then watch it DIE (blocked egress) — bool(local) is
+        # False now, so remote is legitimately allowed again; the stale flag was
+        # emitting EMPTY answers for exactly the tasks racing the loader failure.
+        if config.has_remote() and not (config.local_only and bool(local) and config.use_local):
             return _fireworks(task_id, category, prompt, remote, conf=conf, deadline=deadline,
                               local_fallback=(samples[0].strip() if samples else ""))
 
-        # 5) offline last resort: best local answer (never fail the task)
-        return {"task_id": task_id, "answer": (samples[0].strip() if samples else ""),
+        # 5) offline last resort: best local answer, else a free guess (never empty)
+        return {"task_id": task_id,
+                "answer": (samples[0].strip() if samples else _last_resort_guess(category, prompt)),
                 "route": "local-fallback", "category": category, "tokens": 0,
                 "confidence": round(conf, 3)}
 
