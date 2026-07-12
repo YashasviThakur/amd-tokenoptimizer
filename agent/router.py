@@ -675,6 +675,15 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
 
     # 3) local answer for the categories a small model handles well
     if have_local:
+        # SHIP 22: past the soft deadline or over the local wall-time budget, do
+        # NOT start another 30-60s serialized generation — in LOCAL_ONLY the
+        # remote reroute those flags normally trigger is blocked, so ship 21's
+        # stragglers ground the 3B past the grader's kill window (TIMEOUT). A
+        # fast free answer keeps the run inside the window.
+        if config.local_only and (prefer_remote or local_exhausted):
+            return {"task_id": task_id, "answer": _last_resort_guess(category, prompt),
+                    "route": "local-skip", "category": category, "tokens": 0,
+                    "confidence": 0.0}
         messages = build_messages(category, prompt)
         n = config.local_samples_hard if category in SELF_CONSISTENCY else 1
         if category in ("ner", "code_gen", "code_debug"):
