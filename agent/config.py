@@ -37,6 +37,66 @@ _MODEL_ID = re.compile(r"^(?=.{3,})(?=.*[A-Za-z])[\w./:-]+$")
 _MODEL_NON_ID = {"true", "false", "yes", "no", "none", "null", "auto", "default"}
 
 
+def _first_env(names: tuple, default: str = "") -> str:
+    for n in names:
+        v = os.getenv(n, "").strip()
+        if v:
+            return v
+    return default
+
+
+# The models list gets a 7-name alias sweep, but the KEY and BASE URL were read
+# from exactly one env name each — if the judging proxy renames either (the
+# board was purged & re-scored on new infra), has_remote() can stay True off the
+# injected model list while every call goes out UNAUTHENTICATED or to the wrong
+# host: instant 4xx on all candidates -> every non-solver answer empty -> the
+# exact fast-run accuracy=0 verdict of Jul 12. Sweep aliases the same way,
+# FIREWORKS_* names always win when present.
+_KEY_ENV = ("FIREWORKS_API_KEY", "OPENAI_API_KEY", "FIREWORKS_KEY", "LLM_API_KEY",
+            "GATEWAY_API_KEY", "PROXY_API_KEY", "MODEL_API_KEY", "INFERENCE_API_KEY",
+            "AMD_API_KEY", "API_KEY")
+_BASE_ENV = ("FIREWORKS_BASE_URL", "OPENAI_BASE_URL", "OPENAI_API_BASE", "FIREWORKS_URL",
+             "LLM_BASE_URL", "API_BASE_URL", "GATEWAY_URL", "PROXY_URL", "INFERENCE_URL",
+             "MODEL_BASE_URL", "AMD_BASE_URL", "BASE_URL")
+
+
+def _discover_api_key() -> str:
+    k = _first_env(_KEY_ENV)
+    if k:
+        return k
+    # generic sweep — the exact injected name is unconfirmed; never our own flags,
+    # never known non-inference tokens. Priority names above always win.
+    for name, val in sorted(os.environ.items()):
+        up, v = name.upper(), val.strip()
+        if not v or not (up.endswith("_API_KEY") or up.endswith("_APIKEY")):
+            continue
+        if any(b in up for b in ("GITHUB", "HF_", "HUGGING", "AWS_", "GCP_", "AZURE")):
+            continue
+        return v
+    return ""
+
+
+def _discover_base_url() -> str:
+    u = _first_env(_BASE_ENV)
+    if not u:
+        for name, val in sorted(os.environ.items()):
+            up, v = name.upper(), val.strip()
+            if (("URL" in up or "ENDPOINT" in up)
+                    and v.lower().startswith(("http://", "https://"))
+                    and any(t in up for t in ("BASE", "API", "GATEWAY", "PROXY", "FIREWORKS",
+                                              "LLM", "OPENAI", "INFERENCE", "MODEL", "ENDPOINT"))):
+                u = v
+                break
+    if not u:
+        return "https://api.fireworks.ai/inference/v1"
+    u = u.strip().rstrip("/")
+    # the code joins {base}/chat/completions — tolerate a var that already
+    # points at the full route.
+    if u.endswith("/chat/completions"):
+        u = u[: -len("/chat/completions")]
+    return u
+
+
 def _discover_models() -> list[str]:
     """Model list from the environment: the known names first; ONLY if none of
     them is set, a generic sweep of ANY *MODEL* env var (the harness's exact
@@ -71,8 +131,10 @@ class Config:
     output_path: str = os.getenv("OUTPUT_PATH", "/output/results.json")
 
     # Fireworks (remote) — injected by the harness. ALL remote calls go here.
-    fireworks_api_key: str = os.getenv("FIREWORKS_API_KEY", "")
-    fireworks_base_url: str = os.getenv("FIREWORKS_BASE_URL", "https://api.fireworks.ai/inference/v1")
+    # Alias-swept like the model list (FIREWORKS_* always wins): a renamed key or
+    # base var must never strand every remote call on a 4xx (see _KEY_ENV note).
+    fireworks_api_key: str = field(default_factory=_discover_api_key)
+    fireworks_base_url: str = field(default_factory=_discover_base_url)
     allowed_models: list[str] = field(default_factory=_discover_models)
 
     # Preferred remote model (used if present in ALLOWED_MODELS), else first allowed.

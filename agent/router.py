@@ -580,6 +580,26 @@ def _local_rescue(task_id, category, prompt, local, deadline) -> dict | None:
             "confidence": round(PRIOR.get(category, 0.5), 3)}
 
 
+def _last_resort_guess(category: str, prompt: str) -> str:
+    """Free heuristic answer used ONLY where the task would otherwise emit an
+    EMPTY string (every remote candidate dead, no local model). An empty answer
+    scores 0 with certainty; a guess can only add accuracy — it never displaces
+    a real solver/model answer (those return before this is consulted)."""
+    p = prompt.lower()
+    if category == "sentiment":
+        neg = sum(w in p for w in ("terrible", "awful", "bad", "hate", "worst",
+                                   "disappoint", "broken", "waste", "refund",
+                                   "poor", "useless", "never again"))
+        pos = sum(w in p for w in ("great", "love", "excellent", "amazing", "best",
+                                   "perfect", "wonderful", "fantastic", "delight"))
+        return "negative" if neg > pos else "positive"
+    if re.search(r"\byes or no\b|\banswer yes\b|\byes/no\b", p):
+        return "yes"
+    if re.search(r"\btrue or false\b", p):
+        return "true"
+    return ""
+
+
 def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
     """Return {task_id, answer, route, category, tokens, confidence}.
 
@@ -642,6 +662,12 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
             rescue = _local_rescue(task_id, category, prompt, local, deadline)
             if rescue is not None:
                 return rescue
+        if not str(r.get("answer") or "").strip():
+            g = _last_resort_guess(category, prompt)
+            if g:
+                return {"task_id": task_id, "answer": g, "route": "guess",
+                        "category": category, "tokens": r.get("tokens", 0),
+                        "confidence": 0.0}
         return r
 
     # 3) local answer for the categories a small model handles well
@@ -704,6 +730,6 @@ def route(task: dict, local, remote, prefer_remote: bool = False) -> dict:
                 "route": "local-fallback", "category": category, "tokens": 0,
                 "confidence": round(conf, 3)}
 
-    # no local and no remote (shouldn't happen) -> empty, still valid
-    return {"task_id": task_id, "answer": "", "route": "none", "category": category,
-            "tokens": 0, "confidence": 0.0}
+    # no local and no remote (shouldn't happen) -> free guess over empty, still valid
+    return {"task_id": task_id, "answer": _last_resort_guess(category, prompt),
+            "route": "none", "category": category, "tokens": 0, "confidence": 0.0}

@@ -55,6 +55,11 @@ COPY agent ./agent
 #   grader injects, VERBATIM. Baking a preferred id (gpt-oss-120b) merged it into the
 #   resolved allow-list and got it called first -> MODEL_VIOLATION when the grader's
 #   list didn't include it. The grader supplies the model list at eval; we never guess.
+# MODEL_DISCOVERY=1 (SHIP 19): GET /models cross-check at startup. Safe by
+#   construction (main._resolve_models): it only NARROWS the injected list to the
+#   served intersection, or adopts the served list when NOTHING was injected — it
+#   never adds an off-list id to a configured list, so no MODEL_VIOLATION surface.
+#   Rescues the all-404 scenario (injected ids not deployed on the proxy).
 # DISABLE_SOLVERS=0: MEASURED on the hidden set — the all-remote experiment scored
 #   12/19 where the same code with solvers ON scored 13/19: the (misfire-fixed)
 #   solvers win at least one task the model fumbles. Keep them.
@@ -69,7 +74,7 @@ ENV INPUT_PATH=/input/tasks.json \
     PER_TASK_BUDGET_S=28 \
     RUN_DEADLINE_S=360 \
     MAX_WORKERS=3 \
-    MODEL_DISCOVERY=0 \
+    MODEL_DISCOVERY=1 \
     MAX_TOKENS_FLOOR=2048 \
     FORCE_INSTRUCT_FIRST=1 \
     THINKING_OFF_SOFT=1 \
