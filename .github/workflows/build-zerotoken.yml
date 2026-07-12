@@ -1,0 +1,72 @@
+name: build-zerotoken
+
+# Builds the ZERO-TOKEN bundled small-model image and pushes to a DISTINCT tag
+# `tokenoptimizer-agent-v2:zerotoken`. Never touches :latest or :scored. Proves
+# the bundled model LOADS and answers offline (the whole point) before pushing.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: tokenoptimizer-agent
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lowercase owner for GHCR
+        run: echo "OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - name: Build zero-token image (linux/amd64)
+        run: docker build -f docker/agent-zerotoken.Dockerfile -t zt:test .
+
+      - name: Image size
+        run: |
+          BYTES=$(docker image inspect zt:test --format '{{.Size}}')
+          echo "image size: $((BYTES/1024/1024)) MB"
+
+      - name: Selftest (offline contract)
+        run: docker run --rm --entrypoint python zt:test -m agent.main --selftest
+
+      - name: PROVE the bundled model loads + answers 0-token (no Fireworks)
+        run: |
+          mkdir -p in out
+          cp eval/datasets/practice_tasks.json in/tasks.json
+          # ALLOWED_MODELS empty + no key => LOCAL_ONLY has NO remote. If the model
+          # loads, non-solver tasks route 'local'; if not, they'd be empty/guess.
+          docker run --rm -e ALLOWED_MODELS= -e FIREWORKS_API_KEY= -e LOCAL_THREADS=2 \
+            -e INPUT_PATH=/input/tasks.json -e OUTPUT_PATH=/output/results.json \
+            -v "$PWD/in:/input" -v "$PWD/out:/output" zt:test
+          echo "--- results ---"; cat out/results.json
+          echo ""; echo "--- meta ---"; cat out/results.json.meta.json || true
+          python - <<'PY'
+          import json
+          res = json.load(open("out/results.json", encoding="utf-8"))
+          meta = json.load(open("out/results.json.meta.json", encoding="utf-8"))
+          n = len(res); ne = sum(1 for x in res if str(x.get("answer","")).strip())
+          routes = {}
+          for m in meta:
+              routes[m.get("route")] = routes.get(m.get("route"), 0) + 1
+          print(f"tasks={n} non_empty={ne} routes={routes}")
+          # the model must have answered at least a few tasks locally
+          local = sum(v for k,v in routes.items() if k and k.startswith("local") and k != "local-solver")
+          assert ne == n, f"empty answers: {ne}/{n}"
+          assert local >= 1, f"MODEL DID NOT LOAD/ANSWER — routes={routes}"
+          print(f"OK: bundled model answered {local} tasks locally, 0 tokens")
+          PY
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push :zerotoken to both package names
+        run: |
+          docker tag zt:test ghcr.io/${OWNER}/${IMAGE}:zerotoken
+          docker tag zt:test ghcr.io/${OWNER}/${IMAGE}-v2:zerotoken
+          docker push ghcr.io/${OWNER}/${IMAGE}:zerotoken
+          docker push ghcr.io/${OWNER}/${IMAGE}-v2:zerotoken
+          echo "Pushed ghcr.io/${OWNER}/${IMAGE}-v2:zerotoken"
