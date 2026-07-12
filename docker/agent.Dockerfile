@@ -1,75 +1,26 @@
-# Track-1 submission image — HYBRID local+remote token-efficient agent.
+# Track-1 submission image — LEAN solvers+remote token-efficient agent.
 #
-# Strategy: free deterministic solvers answer what they can prove (0 tokens); a
-# bundled fine-tuned Qwen2.5-3B (Q8_0 GGUF, llama-cpp-python CPU) answers the
-# categories it's reliable on — factual / sentiment / summarization — for 0 tokens;
-# every other category (ner / code / leftover math+logic) and every low-confidence
-# or near-deadline task escalates to a Fireworks model. The earlier hybrid TIMEOUT'd
-# because routing could send all ~19 tasks to the slow serial CPU model; that is now
-# bounded two ways — only three categories ever attempt local (router.LOCAL_OK), and
-# past RUN_DEADLINE_S main.py flips the remaining tasks straight to Fireworks
-# (prefer_remote), so a slow/large set can never blow the 10-min budget.
+# Strategy: free deterministic solvers answer what they can prove (0 tokens);
+# everything else goes to the harness-injected Fireworks models with tight,
+# format-locked prompts. SHIP 18 drops the bundled 3.3GB local model: every
+# model-bundling ship (13/15/16/17) died in the grader's PULL window — the Jul 12
+# forensics show TIMEOUT with evaluationStartedAt=null, then PULL_ERROR on the
+# auto-retry — i.e. the box never finished pulling/extracting the 8x410MB model
+# layers, the agent itself never ran. A few-hundred-MB image pulls in seconds;
+# a scored solvers+remote run strictly dominates an unranked TIMEOUT.
 #
 #   docker buildx build --platform linux/amd64 \
-#     -f docker/agent.Dockerfile -t <registry>/tokenoptimizer-agent:latest \
-#     --build-arg HF_GGUF_REPO=<you>/tokenopt-3b-gguf --push .
+#     -f docker/agent.Dockerfile -t <registry>/tokenoptimizer-agent:latest --push .
 #
 # The harness injects FIREWORKS_API_KEY / FIREWORKS_BASE_URL / ALLOWED_MODELS and
 # mounts /input + /output. We only read those from the environment.
 FROM python:3.11-slim
 
 LABEL org.opencontainers.image.source="https://github.com/YashasviThakur/amd-tokenoptimizer" \
-      org.opencontainers.image.description="AMD ACT II Track 1 - hybrid local+Fireworks token-efficient agent" \
+      org.opencontainers.image.description="AMD ACT II Track 1 - lean solvers+Fireworks token-efficient agent" \
       org.opencontainers.image.licenses="MIT"
 
 WORKDIR /app
-
-# Build llama-cpp-python (CPU) FROM SOURCE with a portable AVX2 baseline
-# (GGML_NATIVE=OFF). Prebuilt wheels are risky: the musllinux wheel won't load on
-# glibc slim, and a -march=native / AVX-512 wheel can pass on the build CPU but
-# crash with an illegal instruction on the grading VM. An explicit AVX2/FMA/F16C
-# build runs on any modern x86-64 (universal on cloud) and links glibc.
-# GGML_OPENMP=OFF -> llama.cpp uses its own pthread pool, so the compiled .so has
-# no libgomp runtime dependency. Build tools are kept (only ~400MB; image stays
-# well under 10GB) so every runtime lib the .so needs is present.
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential cmake \
- && CMAKE_ARGS="-DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON -DGGML_OPENMP=OFF" \
-      pip install --no-cache-dir "llama-cpp-python==0.3.2" \
- && pip install --no-cache-dir "huggingface_hub>=0.23" \
- && rm -rf /var/lib/apt/lists/*
-
-# Bundle the fine-tuned Q8_0 model. Q8 PRESERVES accuracy (Q4/Q6 degrade this 3B to
-# ~80%). The 3.1GB model as ONE Docker layer TIMED OUT the grader's pull (PULL_ERROR);
-# fetch it in 8 byte-range chunks -> 8 separate ~410MB layers that Docker pulls
-# concurrently and retries INDIVIDUALLY, so a flaky/slow pull survives where one huge
-# layer can't. Reassembled once at container start (start.sh) — byte-identical to the
-# original file, so ZERO accuracy change. 8 * 410684460 == 3285475680 (exact file size).
-ARG HF_GGUF_REPO=yashasvithakur/tokenopt-3b-gguf
-ENV MURL=https://huggingface.co/${HF_GGUF_REPO}/resolve/main/tokenopt-3b-q8_0.gguf
-RUN mkdir -p /models \
- && printf '%s\n' \
-    'import sys, time, os, urllib.request as u' \
-    'c = 410684460; i = int(sys.argv[1])' \
-    'for attempt in range(5):' \
-    '    try:' \
-    '        r = u.Request(os.environ["MURL"], headers={"Range": "bytes=%d-%d" % (i*c, (i+1)*c-1), "User-Agent": "curl/8"})' \
-    '        d = u.urlopen(r, timeout=900).read()' \
-    '        assert len(d) == c, "short read %d" % len(d)' \
-    '        open("/models/mp_%d" % i, "wb").write(d)' \
-    '        break' \
-    '    except Exception as e:' \
-    '        print("chunk", i, "attempt", attempt, "failed:", e, flush=True)' \
-    '        if attempt == 4: raise' \
-    '        time.sleep(10 * (attempt + 1))' \
-    > /dl.py
-RUN python /dl.py 0
-RUN python /dl.py 1
-RUN python /dl.py 2
-RUN python /dl.py 3
-RUN python /dl.py 4
-RUN python /dl.py 5
-RUN python /dl.py 6
-RUN python /dl.py 7
 
 COPY agent/requirements.txt ./agent/requirements.txt
 RUN pip install --no-cache-dir -r agent/requirements.txt
@@ -80,15 +31,10 @@ RUN python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
 
 COPY agent ./agent
 
-# REMOTE_FIRST=0: free solvers first (0 tokens), then the bundled local model for
-#   the categories it's reliable on (factual/sentiment/summarization), then Fireworks
-#   for everything else + low-confidence + near-deadline escalations.
-# USE_LOCAL=1 / LOCAL_MODEL_PATH: bundle the fine-tuned Qwen2.5-3B Q8_0 GGUF and answer
-#   easy categories for 0 tokens. The old TIMEOUT is bounded now: only three categories
-#   ever go local (router.LOCAL_OK) and past RUN_DEADLINE_S main.py flips the rest
-#   straight to Fireworks (prefer_remote).
-# LOCAL_SAMPLES_HARD=2: self-consistency — factual & sentiment keep a local answer only
-#   when two draws AGREE; a lone/disagreeing draw escalates (gate-safe).
+# REMOTE_FIRST=0: free solvers first (0 tokens), then Fireworks for everything
+#   else + low-confidence + near-deadline escalations.
+# USE_LOCAL=0: no bundled model in this image — main.run() gets local=None and the
+#   router never attempts a local rung (same measured code path as the selftest).
 # The router calls ONLY the harness-injected ALLOWED_MODELS, each VERBATIM: the
 #   judging proxy matches ids exactly, so any off-list string (a re-spelled id or an
 #   always-on model not on the list) makes the whole submission a MODEL_VIOLATION.
@@ -115,9 +61,7 @@ COPY agent ./agent
 ENV INPUT_PATH=/input/tasks.json \
     OUTPUT_PATH=/output/results.json \
     REMOTE_FIRST=0 \
-    USE_LOCAL=1 \
-    LOCAL_MODEL_PATH=/models/tokenopt-3b-q8_0.gguf \
-    LOCAL_SAMPLES_HARD=2 \
+    USE_LOCAL=0 \
     DISABLE_SOLVERS=0 \
     LOCAL_ONLY=0 \
     REASONING_EFFORT= \
@@ -131,14 +75,9 @@ ENV INPUT_PATH=/input/tasks.json \
     THINKING_OFF_SOFT=1 \
     THINKING_OFF_ALL=1 \
     ENABLE_BATCHING=1 \
-    BATCH_CATEGORIES=factual \
-    LOCAL_CODE_MAX_TOKENS=96 \
-    LOCAL_TIME_BUDGET_S=300 \
-    LOCAL_LOAD_CUTOFF_S=150
+    BATCH_CATEGORIES=factual
 
-# Direct entrypoint — the agent process is READY in seconds. Model reassembly (the
-# 8 chunk layers -> one GGUF) + load happen in a BACKGROUND thread inside the agent
-# (main.LazyLocal) behind LOCAL_LOAD_CUTOFF_S: the blocking start.sh reassembly ran
-# BEFORE the agent and TIMEOUT'd the whole run on an overloaded grader box; now a
-# slow box degrades to a scored all-remote run instead of an unranked TIMEOUT.
+# Direct entrypoint — the agent process is READY in seconds and pre-seeds a valid
+# results.json immediately (SIGKILL-proof); with USE_LOCAL=0 the lazy model loader
+# is skipped entirely and routing is solvers -> Fireworks.
 ENTRYPOINT ["python", "-m", "agent.main"]
