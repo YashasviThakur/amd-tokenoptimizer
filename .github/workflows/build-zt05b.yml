@@ -1,0 +1,57 @@
+name: build-zt05b
+
+# Zero-token build with the TINY Qwen2.5-0.5B Q8 (~676MB) baked in — small enough
+# to fit the grader's RAM (the 1.5B/3B likely OOM-crashed its eval box). Pushes to
+# :zt05b. The real 0-token top-cluster play, retried on the calmer post-crush grader.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: tokenoptimizer-agent
+  MSRC: https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q8_0.gguf
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lowercase owner for GHCR
+        run: echo "OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+      - name: Build zt05b image
+        run: docker build -f docker/agent-zerotoken.Dockerfile --build-arg MSRC="${MSRC}" -t zt05:test .
+      - name: Image size
+        run: |
+          BYTES=$(docker image inspect zt05:test --format '{{.Size}}')
+          echo "image size: $((BYTES/1024/1024)) MB"
+      - name: Selftest
+        run: docker run --rm --entrypoint python zt05:test -m agent.main --selftest
+      - name: PROVE model loads + answers 0-token
+        run: |
+          mkdir -p in out
+          cp eval/datasets/practice_tasks.json in/tasks.json
+          docker run --rm -e ALLOWED_MODELS= -e FIREWORKS_API_KEY= -e LOCAL_THREADS=2 \
+            -e INPUT_PATH=/input/tasks.json -e OUTPUT_PATH=/output/results.json \
+            -v "$PWD/in:/input" -v "$PWD/out:/output" zt05:test
+          cat out/results.json; echo ""
+          python - <<'PY'
+          import json
+          res=json.load(open("out/results.json")); meta=json.load(open("out/results.json.meta.json"))
+          ne=sum(1 for x in res if str(x.get("answer","")).strip())
+          routes={}
+          for m in meta: routes[m.get("route")]=routes.get(m.get("route"),0)+1
+          local=sum(v for k,v in routes.items() if k and k.startswith("local") and k!="local-solver")
+          print(f"non_empty={ne}/{len(res)} routes={routes}")
+          assert ne==len(res) and local>=1, f"model not answering: {routes}"
+          print("OK 0-token 0.5b")
+          PY
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Push :zt05b
+        run: |
+          docker tag zt05:test ghcr.io/${OWNER}/${IMAGE}-v2:zt05b
+          docker push ghcr.io/${OWNER}/${IMAGE}-v2:zt05b
+          echo "Pushed ghcr.io/${OWNER}/${IMAGE}-v2:zt05b"
