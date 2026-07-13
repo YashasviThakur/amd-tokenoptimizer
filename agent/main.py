@@ -347,7 +347,7 @@ def run() -> dict:
     _diagnose_env()
     meter = RemoteMeter()
     remote = Model(config.fireworks_base_url, config.fireworks_api_key, config.request_timeout, meter=meter)
-    if config.has_remote():
+    if config.has_remote() and not config.strict_no_remote:
         _resolve_models(remote)
     # LAZY local load: the process is ready instantly; reassembly+load happen in a
     # background thread with a readiness cutoff (the ship-16 TIMEOUT died in the

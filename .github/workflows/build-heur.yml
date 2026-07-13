@@ -32,8 +32,14 @@ jobs:
         run: |
           mkdir -p in out
           cp eval/datasets/dev_tasks.json in/tasks.json
-          # No ALLOWED_MODELS / key injected AND STRICT_NO_REMOTE baked in -> truly 0 tokens.
-          docker run --rm -e INPUT_PATH=/input/tasks.json -e OUTPUT_PATH=/output/results.json \
+          # SIMULATE THE GRADER: inject a key + model list + an UNREACHABLE base URL.
+          # STRICT_NO_REMOTE must skip all network (no _resolve_models hang) and still
+          # produce answers at 0 tokens. This is the exact regression that scored 0%.
+          docker run --rm \
+            -e FIREWORKS_API_KEY="ci-fake-key" \
+            -e ALLOWED_MODELS="gpt-oss-120b,gemma-4-31b-it" \
+            -e FIREWORKS_BASE_URL="http://192.0.2.1:9999/v1" \
+            -e INPUT_PATH=/input/tasks.json -e OUTPUT_PATH=/output/results.json \
             -v "$PWD/in:/input" -v "$PWD/out:/output" heur:test
           echo "--- meta (tokens) ---"; cat out/results.json.meta.json | head -c 300; echo ""
           python - <<'PY'
