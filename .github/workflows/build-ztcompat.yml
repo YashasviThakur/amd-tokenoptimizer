@@ -1,0 +1,57 @@
+name: build-ztcompat
+
+# Zero-token 0.5B with a MAXIMALLY-COMPATIBLE scalar llama.cpp (no AVX/AVX2/FMA)
+# — the earlier 0.5B scored accuracy=0 (all-empty), consistent with the AVX2 build
+# hitting an illegal instruction on an older grader CPU. Scalar runs anywhere.
+# Generous time budgets (scalar is slower). Pushes to :ztcompat.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: tokenoptimizer-agent
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lowercase owner for GHCR
+        run: echo "OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+      - name: Build ztcompat image
+        run: docker build -f docker/agent-zt-compat.Dockerfile -t ztc:test .
+      - name: Image size
+        run: |
+          BYTES=$(docker image inspect ztc:test --format '{{.Size}}')
+          echo "image size: $((BYTES/1024/1024)) MB"
+      - name: Selftest
+        run: docker run --rm --entrypoint python ztc:test -m agent.main --selftest
+      - name: PROVE scalar model loads + answers 0-token
+        run: |
+          mkdir -p in out
+          cp eval/datasets/practice_tasks.json in/tasks.json
+          docker run --rm -e ALLOWED_MODELS= -e FIREWORKS_API_KEY= -e LOCAL_THREADS=2 \
+            -e INPUT_PATH=/input/tasks.json -e OUTPUT_PATH=/output/results.json \
+            -v "$PWD/in:/input" -v "$PWD/out:/output" ztc:test
+          cat out/results.json; echo ""
+          python - <<'PY'
+          import json
+          res=json.load(open("out/results.json")); meta=json.load(open("out/results.json.meta.json"))
+          ne=sum(1 for x in res if str(x.get("answer","")).strip())
+          routes={}
+          for m in meta: routes[m.get("route")]=routes.get(m.get("route"),0)+1
+          local=sum(v for k,v in routes.items() if k and k.startswith("local") and k!="local-solver")
+          print(f"non_empty={ne}/{len(res)} routes={routes}")
+          assert ne==len(res) and local>=1, f"model not answering: {routes}"
+          print("OK 0-token scalar 0.5b")
+          PY
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Push :ztcompat
+        run: |
+          docker tag ztc:test ghcr.io/${OWNER}/${IMAGE}-v2:ztcompat
+          docker push ghcr.io/${OWNER}/${IMAGE}-v2:ztcompat
+          echo "Pushed ghcr.io/${OWNER}/${IMAGE}-v2:ztcompat"
