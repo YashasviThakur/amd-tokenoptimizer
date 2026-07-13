@@ -400,6 +400,8 @@ def batch_remote(category: str, items: "list[tuple[int, str]]", remote, *,
     msgs = build_batch_messages(category, prompts)
     # N answers need N-fold room, but keep the reasoning trace bounded.
     max_tok = min(max(max_tokens_for(category), config.max_tokens_floor) + 80 * len(items), 3072)
+    if config.remote_max_tokens_cap:            # LOW-TOKEN mode: hard cap batch too
+        max_tok = min(max_tok, config.remote_max_tokens_cap + 40 * len(items))
     # batch categories are all soft; thinking off for EVERY family (SHIP 20 —
     # backends strips the field and retries on a 4xx, ignoring gateways no-op)
     t_off = config.thinking_off_all or config.thinking_off_soft
@@ -447,6 +449,8 @@ def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0
     builder = build_messages if full_prompt else build_remote_messages
     messages = builder(category, prompt)  # per-model variant built inside the loop
     max_tok = max(max_tokens_for(category), config.max_tokens_floor)
+    if config.remote_max_tokens_cap:            # LOW-TOKEN mode: hard cap
+        max_tok = min(max_tok, config.remote_max_tokens_cap)
     candidates = _candidate_models(category)
     word_limited = category == "summarization" and bool(_WORD_LIMIT.search(prompt))
     if word_limited:
@@ -477,7 +481,9 @@ def _fireworks(task_id, category, prompt, remote, *, full_prompt=False, conf=0.0
         # summarization/ner/code. Ceiling capped so a retry stays <30s/request.
         # single attempt when the base ceiling is already large (a floor-raised
         # 4096 has no bigger retry; the old min() would have "retried" SMALLER)
-        for mt in ((max_tok,) if max_tok >= 1536 else (max_tok, min(max_tok * 3, 1536))):
+        _ceilings = (max_tok,) if (max_tok >= 1536 or config.no_trunc_retry) \
+            else (max_tok, min(max_tok * 3, 1536))
+        for mt in _ceilings:
             rem = _time_left()
             if rem is not None and rem <= 4.0:  # not enough time for another attempt
                 break

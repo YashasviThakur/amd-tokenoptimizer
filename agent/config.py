@@ -223,6 +223,15 @@ class Config:
     batch_categories: tuple = tuple(
         c.strip() for c in os.getenv("BATCH_CATEGORIES", "factual,ner").split(",") if c.strip())
     batch_max_group: int = int(os.getenv("BATCH_MAX_GROUP", "6"))
+    # LOW-TOKEN MODE (opt-in, default off so other builds are unaffected).
+    # remote_max_tokens_cap: hard-cap every remote max_tokens at this value —
+    #   forces short generations, crashes the token bill, at the cost of accuracy
+    #   on reasoning models (they truncate). 0 = no cap.
+    # no_trunc_retry: skip the retry-at-higher-ceiling on finish=length — accept
+    #   the truncated (possibly wrong) answer instead of spending 2x tokens to
+    #   let a reasoning model finish. Pairs with the cap for minimum tokens.
+    remote_max_tokens_cap: int = int(os.getenv("REMOTE_MAX_TOKENS_CAP", "0"))
+    no_trunc_retry: bool = os.getenv("NO_TRUNC_RETRY", "0").strip().lower() in ("1", "true", "yes")
     # httpx read timeout. 26s (was 14): a reasoning model's trace can legitimately
     # take >14s, and the OLD value timed those calls out -> empty answer -> wrong.
     # Read timeouts are no longer retried, so a single 26s call stays under the
