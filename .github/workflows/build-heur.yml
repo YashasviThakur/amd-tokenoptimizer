@@ -1,0 +1,74 @@
+name: build-heur
+
+# PURE 0-TOKEN build: solvers + deterministic heuristics, STRICT_NO_REMOTE (never
+# calls Fireworks) and no local model. Scores the container against the 32 dev
+# tasks and HARD-FAILS if accuracy < 50% or any token is spent. Pushes to :heur.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: tokenoptimizer-agent
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lowercase owner for GHCR
+        run: echo "OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+      - name: Build image
+        run: docker build -f docker/agent-heur.Dockerfile -t heur:test .
+      - name: Image size
+        run: |
+          BYTES=$(docker image inspect heur:test --format '{{.Size}}')
+          echo "image size: $((BYTES/1024/1024)) MB"
+      - name: Selftest
+        run: docker run --rm --entrypoint python heur:test -m agent.main --selftest
+      - name: Score container on dev tasks (>=50% AND 0 tokens, no remote reachable)
+        run: |
+          mkdir -p in out
+          cp eval/datasets/dev_tasks.json in/tasks.json
+          # No ALLOWED_MODELS / key injected AND STRICT_NO_REMOTE baked in -> truly 0 tokens.
+          docker run --rm -e INPUT_PATH=/input/tasks.json -e OUTPUT_PATH=/output/results.json \
+            -v "$PWD/in:/input" -v "$PWD/out:/output" heur:test
+          echo "--- meta (tokens) ---"; cat out/results.json.meta.json | head -c 300; echo ""
+          python - <<'PY'
+          import json, re
+          res = {r["task_id"]: r["answer"] for r in json.load(open("out/results.json"))}
+          meta = json.load(open("out/results.json.meta.json"))
+          exp = json.load(open("eval/datasets/dev_expected.json"))
+          tokens = sum((m.get("tokens") or 0) for m in meta)
+          assert tokens == 0, f"NOT 0 tokens: {tokens}"
+          def chk(a, s):
+              a=(a or "").strip(); al=a.lower(); t=s["type"]; v=s["value"]
+              if t=="number":
+                  ns=re.findall(r"-?\d+(?:\.\d+)?", a.replace(",","")); return any(abs(float(n)-float(v))<0.01 for n in ns) if ns else False
+              if t=="exact": return al==str(v).lower()
+              if t in ("contains","label"): return str(v).lower() in al
+              if t=="keywords":
+                  return all(k.lower() in al for k in v.get("all",[])) and ((not v.get("any")) or any(k.lower() in al for k in v["any"]))
+              if t=="json_entities":
+                  try:
+                      o=json.loads(a); flat=" ".join(str(x).lower() for l in o.values() for x in (l if isinstance(l,list) else [l]))
+                  except Exception: flat=al
+                  w=[e.lower() for l in v.values() for e in l]; return sum(1 for e in w if e in flat)>=max(1,len(w)-1)
+              if t=="code": return all(m.lower() in al for m in v.get("must_contain",[]))
+              return False
+          cor=sum(1 for tid,s in exp.items() if "check" in s and chk(res.get(tid,""), s["check"]))
+          tot=sum(1 for s in exp.values() if "check" in s)
+          pct=100*cor/tot
+          print(f"ACCURACY {cor}/{tot} = {pct:.1f}%  |  TOKENS {tokens}")
+          assert pct >= 50.0, f"accuracy below 50%: {pct:.1f}%"
+          print("OK: >=50% at 0 tokens")
+          PY
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Push :heur
+        run: |
+          docker tag heur:test ghcr.io/${OWNER}/${IMAGE}-v2:heur
+          docker push ghcr.io/${OWNER}/${IMAGE}-v2:heur
+          echo "Pushed ghcr.io/${OWNER}/${IMAGE}-v2:heur"

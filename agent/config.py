@@ -232,6 +232,13 @@ class Config:
     #   let a reasoning model finish. Pairs with the cap for minimum tokens.
     remote_max_tokens_cap: int = int(os.getenv("REMOTE_MAX_TOKENS_CAP", "0"))
     no_trunc_retry: bool = os.getenv("NO_TRUNC_RETRY", "0").strip().lower() in ("1", "true", "yes")
+    # STRICT_NO_REMOTE (opt-in): block ALL Fireworks calls UNCONDITIONALLY, even
+    # with no local model — solvers + deterministic heuristics answer everything at
+    # 0 tokens. Unlike LOCAL_ONLY (which falls back to remote when the local model
+    # is absent/failed), this guarantees a true 0-token run. Pairs with a strong
+    # _last_resort_guess so no task is ever empty (empty = certain 0, and repeated
+    # empties are what scored the bundled model accuracy=0 on the slow grader box).
+    strict_no_remote: bool = os.getenv("STRICT_NO_REMOTE", "0").strip().lower() in ("1", "true", "yes")
     # httpx read timeout. 26s (was 14): a reasoning model's trace can legitimately
     # take >14s, and the OLD value timed those calls out -> empty answer -> wrong.
     # Read timeouts are no longer retried, so a single 26s call stays under the

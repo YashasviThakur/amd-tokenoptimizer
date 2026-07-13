@@ -396,7 +396,7 @@ def run() -> dict:
 
     # Optional batch pre-pass: resolve grouped always-remote tasks in fewer calls.
     resolved: set = set()
-    if config.enable_batching and config.has_remote():
+    if config.enable_batching and config.has_remote() and not config.strict_no_remote:
         try:
             resolved = _batch_prepass(tasks, remote, results, meta, t0)
             if resolved:
@@ -521,27 +521,34 @@ def selftest() -> int:
     run()
 
     try:
+        # Check the SOLVER directly (deterministic core), not the final answer — the
+        # deterministic heuristic fallback now fills solver-deferred tasks with a
+        # best-effort guess, so an == "" check on the final answer would test the
+        # fallback, not solver correctness. free_solve() returns None when the solver
+        # correctly declines a task.
+        from .solvers import free_solve
+        from .classifier import classify
         out = json.loads(open(outp, encoding="utf-8").read())
-        by = {o["task_id"]: o["answer"] for o in out}
+        sv = {t["task_id"]: (free_solve(classify(t["prompt"]), t["prompt"]) or "") for t in sample}
         ok = (isinstance(out, list) and len(out) == 17
               and all(isinstance(o.get("task_id"), str) and isinstance(o.get("answer"), str) for o in out)
-              and "144" in by["st1"]
-              and "carol" in by["st2"].lower()
-              and "yes" in by["st3"].lower()
-              and "40" in by["st4"]                       # discount anchored correctly
-              and by["st5"].strip() == ""                 # power+add: solver deferred
-              and by["st6"].strip() == ""                 # percent+add: solver deferred
-              and "maya" in by["st7"].lower()             # race ordering (ahead of / won)
-              and "25" in by["st8"]                       # profit percentage
-              and by["st9"].strip() == ""                 # year range: no -4 misfire
-              and by["st10"].strip() == ""                # reverse discount: deferred
-              and by["st11"].strip() == "20"              # SAVINGS asked, not sale price
-              and by["st12"].strip().lower() == "bob"     # ordinal: SECOND tallest
-              and by["st13"].strip() == ""                # "write a program" != math solver
-              and by["st14"].strip() == "15"              # arithmetic sequence next-term
-              and by["st15"].strip() == "120"             # exact time conversion
-              and by["st16"].strip().lower() == "monday"  # day-of-week anchor+offset
-              and by["st17"].strip() == "")               # prime sequence: solver deferred
+              and "144" in sv["st1"]
+              and "carol" in sv["st2"].lower()
+              and "yes" in sv["st3"].lower()
+              and "40" in sv["st4"]                       # discount anchored correctly
+              and sv["st5"].strip() == ""                 # power+add: solver deferred
+              and sv["st6"].strip() == ""                 # percent+add: solver deferred
+              and "maya" in sv["st7"].lower()             # race ordering (ahead of / won)
+              and "25" in sv["st8"]                       # profit percentage
+              and sv["st9"].strip() == ""                 # year range: no -4 misfire
+              and sv["st10"].strip() == ""                # reverse discount: deferred
+              and sv["st11"].strip() == "20"              # SAVINGS asked, not sale price
+              and sv["st12"].strip().lower() == "bob"     # ordinal: SECOND tallest
+              and sv["st13"].strip() == ""                # "write a program" != math solver
+              and sv["st14"].strip() == "15"              # arithmetic sequence next-term
+              and sv["st15"].strip() == "120"             # exact time conversion
+              and sv["st16"].strip().lower() == "monday"  # day-of-week anchor+offset
+              and sv["st17"].strip() == "")               # prime sequence: solver deferred
     except Exception as e:
         print(f"[selftest] FAIL: {e}")
         return 1
