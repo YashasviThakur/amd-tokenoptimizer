@@ -1,0 +1,44 @@
+name: build-lowtoken
+
+# Builds the AGGRESSIVE low-token remote build (docker/agent-lowtoken.Dockerfile:
+# floor=0, REMOTE_MAX_TOKENS_CAP=160, NO_TRUNC_RETRY=1) and pushes to :lowtoken.
+# Trades accuracy for far fewer tokens (user directive). Never touches other tags.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: tokenoptimizer-agent
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lowercase owner for GHCR
+        run: echo "OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+      - name: Build low-token image
+        run: docker build -f docker/agent-lowtoken.Dockerfile -t lt:test .
+      - name: Selftest (offline contract)
+        run: docker run --rm --entrypoint python lt:test -m agent.main --selftest
+      - name: Offline solver smoke
+        run: |
+          mkdir -p in out
+          cp docker/sample_input/tasks.json in/tasks.json
+          docker run --rm -e ALLOWED_MODELS= -e INPUT_PATH=/input/tasks.json -e OUTPUT_PATH=/output/results.json \
+            -v "$PWD/in:/input" -v "$PWD/out:/output" lt:test
+          python -c "import json; d=json.load(open('out/results.json')); assert len(d)==4 and all(x['answer'] for x in d), d; print('solvers:', [x['answer'] for x in d])"
+      - name: Image size
+        run: |
+          BYTES=$(docker image inspect lt:test --format '{{.Size}}')
+          echo "image size: $((BYTES/1024/1024)) MB"
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Push :lowtoken
+        run: |
+          docker tag lt:test ghcr.io/${OWNER}/${IMAGE}-v2:lowtoken
+          docker push ghcr.io/${OWNER}/${IMAGE}-v2:lowtoken
+          echo "Pushed ghcr.io/${OWNER}/${IMAGE}-v2:lowtoken"
